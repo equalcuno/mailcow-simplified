@@ -1,5 +1,16 @@
 # mailcow: dockerized - 🐮 + 🐋 = 💕
 
+This fork includes **Plates**, an Arevo-inspired interface for mailcow's existing
+backend. See the [presentation guide](data/web/ui/plates/README.md) for use,
+classic-UI rollback, local preview, and upstream-update checks.
+
+To deploy only the custom UI onto an existing instance, use `sudo bash ./update-ui.sh`
+(or `--check` to validate first). It downloads this fork, backs up affected files,
+restarts PHP-FPM, and removes its temporary checkout.
+
+For a real local mailcow stack in Docker-in-Docker, run
+`./helper-scripts/dev-mailcow-dind.sh up`. See the [live test guide](tests/live/README.md).
+
 [![Translation status](https://translate.mailcow.email/widgets/mailcow-dockerized/-/translation/svg-badge.svg)](https://translate.mailcow.email/engage/mailcow-dockerized/)
 [![Twitter URL](https://img.shields.io/twitter/url/https/twitter.com/mailcow_email.svg?style=social&label=Follow%20%40mailcow_email)](https://twitter.com/mailcow_email)
 ![Mastodon Follow](https://img.shields.io/mastodon/follow/109388212176073348?domain=https%3A%2F%2Fmailcow.social&label=Follow%20%40doncow%40mailcow.social&link=https%3A%2F%2Fmailcow.social%2F%40doncow)

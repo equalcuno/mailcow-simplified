@@ -82,6 +82,21 @@ if (isset($_POST["login_user"]) && isset($_POST["pass_user"])) {
 }
 
 if (isset($_SESSION['mailcow_cc_role']) && $_SESSION['mailcow_cc_role'] == "admin" && !isset($_SESSION['mailcow_cc_api'])) {
+  if (isset($_POST['submit_business_name']) || isset($_POST['submit_ui_favicon']) || isset($_POST['reset_ui_favicon'])) {
+    protect_route(['admin']);
+    try {
+      if (isset($_POST['submit_business_name'])) {
+        \Mailcow\Ui\Branding::saveName($redis, $_SESSION['mailcow_cc_role'], $DEMO_MODE, (string)($_POST['business_name'] ?? ''));
+      } else {
+        \Mailcow\Ui\Branding::saveFavicon($redis, $_SESSION['mailcow_cc_role'], $DEMO_MODE, $_FILES['ui_favicon'] ?? [], isset($_POST['reset_ui_favicon']));
+      }
+      $_SESSION['return'][] = ['type' => 'success', 'msg' => 'Branding saved.'];
+    } catch (\Throwable $e) {
+      $_SESSION['return'][] = ['type' => 'danger', 'msg' => $e instanceof \InvalidArgumentException ? $e->getMessage() : 'Could not save branding.'];
+    }
+    header('Location: /admin/system#tab-ui');
+    exit;
+  }
   // TODO: Move file upload to API?
 	if (isset($_POST["submit_main_logo"])) {
     if ($_FILES['main_logo']['error'] == 0) {

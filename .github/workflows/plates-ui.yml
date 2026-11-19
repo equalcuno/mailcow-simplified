@@ -1,0 +1,51 @@
+name: Plates UI compatibility
+on:
+  pull_request:
+    paths:
+      - 'data/web/**'
+      - 'data/conf/nginx/templates/**'
+      - 'tests/ui/**'
+      - 'tests/live/**'
+      - 'helper-scripts/dev-mailcow-dind.sh'
+      - 'helper-scripts/check-plates-compatibility.py'
+      - 'update-ui.sh'
+      - '.github/workflows/plates-ui.yml'
+  workflow_dispatch:
+
+jobs:
+  presentation:
+    runs-on: ubuntu-latest
+    env:
+      PLATES_PREVIEW_DIR: ${{ runner.temp }}/mailcow-plates-preview
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, pdo_sqlite
+          coverage: none
+      - name: Check upstream contracts
+        run: python3 helper-scripts/check-plates-compatibility.py
+      - name: Check isolated live harness commands
+        run: python3 tests/live/test_harness.py
+      - name: Check UI deployment and rollback
+        run: python3 tests/ui/test_update_ui.py
+      - name: Render and check domain restrictions
+        run: |
+          php tests/ui/render.php
+          php tests/ui/metrics.php
+      - name: Install browser test dependencies
+        working-directory: tests/ui
+        run: npm ci
+      - name: Exercise navigation and native forms
+        working-directory: tests/ui
+        run: npm test
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: plates-ui-previews
+          path: ${{ env.PLATES_PREVIEW_DIR }}/*.png
+          if-no-files-found: ignore

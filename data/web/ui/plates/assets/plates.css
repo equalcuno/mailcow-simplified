@@ -1,0 +1,252 @@
+/* Plates: flat paper surfaces, an iron rail, blue actions, and status with words.
+   Scoped to this presentation so /?ui=stock uses upstream styles without cleanup. */
+@font-face { font-family: 'Plates Text'; src: url('/ui/plates/assets/fonts/text.woff2') format('woff2'); font-weight: 400; font-display: swap; }
+@font-face { font-family: 'Plates Text'; src: url('/ui/plates/assets/fonts/medium.woff2') format('woff2'); font-weight: 500 800; font-display: swap; }
+@font-face { font-family: 'Plates Display'; src: url('/ui/plates/assets/fonts/display.woff2') format('woff2'); font-weight: 700 900; font-display: swap; }
+
+.plates-ui {
+  --p-chalk: #f1f3f5;
+  --p-paper: #fff;
+  --p-iron: #17212b;
+  --p-steel: #5b6876;
+  --p-line: #dce1e6;
+  --p-wash: #e8ecef;
+  --p-blue: #1f4fd8;
+  --p-blue-deep: #173eae;
+  --p-blue-tint: #e7edfc;
+  --p-green: #1b8a51;
+  --p-green-tint: #e2f3ea;
+  --p-yellow: #7a5600;
+  --p-yellow-tint: #fbf2d9;
+  --p-red: #cf3529;
+  --p-red-tint: #fbe9e7;
+  --p-rail-width: 232px;
+  --mc-body-bg: var(--p-chalk);
+  --mc-surface: var(--p-paper);
+  --mc-surface-alt: var(--p-wash);
+  --mc-primary: var(--p-blue);
+  --mc-primary-border: var(--p-blue-deep);
+  --mc-border: var(--p-line);
+  --mc-muted: var(--p-steel);
+  --mc-font-family: 'Plates Text', sans-serif;
+  --bs-body-font-family: 'Plates Text', sans-serif;
+  --bs-body-color: var(--p-iron);
+  --bs-body-bg: var(--p-chalk);
+  --bs-border-color: var(--p-line);
+  --bs-link-color: var(--p-blue);
+  --bs-link-hover-color: var(--p-blue-deep);
+  background: var(--p-chalk);
+  color: var(--p-iron);
+  font: 15px/1.5 'Plates Text', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* mailcow's theme switch owns dark-mode preference, including the OS default. */
+html:has(#dark-mode-theme) .plates-ui {
+  --p-chalk: #111922;
+  --p-paper: #1b2632;
+  --p-iron: #edf1f5;
+  --p-steel: #a9b4c0;
+  --p-line: #344251;
+  --p-wash: #25323f;
+  --p-blue: #91adff;
+  --p-blue-deep: #b3c6ff;
+  --p-blue-tint: #25395e;
+  --p-green: #87d5ae;
+  --p-green-tint: #193c30;
+  --p-yellow: #f1d17c;
+  --p-yellow-tint: #43391f;
+  --p-red: #ffaaa2;
+  --p-red-tint: #482a2c;
+}
+
+.plates-ui a { text-underline-offset: 3px; }
+.plates-ui :is(a, button, input, select, textarea, summary):focus-visible { outline: 2px solid var(--p-blue); outline-offset: 3px; box-shadow: none; }
+.plates-ui :is(h1, h2, h3, h4, h5) { color: var(--p-iron); font-family: 'Plates Display', sans-serif; letter-spacing: -.025em; }
+.plates-ui .text-muted { color: var(--p-steel) !important; }
+.plates-ui .text-primary { color: var(--p-blue) !important; }
+.plates-ui .text-success { color: var(--p-green) !important; }
+.plates-ui .text-danger { color: var(--p-red) !important; }
+.plates-ui .text-warning { color: var(--p-yellow) !important; }
+.plates-ui .plates-skip { position: fixed; left: 16px; top: -100px; z-index: 2000; background: var(--p-paper); color: var(--p-blue); padding: 12px 20px; border-radius: 8px; }
+.plates-ui .plates-skip:focus { top: 12px; }
+.plates-content-anchor { scroll-margin-top: 80px; }
+.plates-content-anchor:focus { outline: 0; }
+.plates-ui .p-business-logo { display: flex; align-items: center; justify-content: center; flex-shrink: 0; max-width: 72px; }
+.plates-ui .p-business-logo img { max-width: 72px; max-height: 38px; object-fit: contain; }
+.plates-ui .p-business-name { min-width: 0; overflow-wrap: anywhere; }
+
+/* Shell. The upstream utility menus retain language, theme, apps and logout. */
+.plates-signed-in > .container { width: auto; max-width: 1440px; padding-inline: 32px; }
+.plates-signed-in > .container.flex-grow-1 { padding-top: 24px; padding-bottom: 40px; }
+.plates-ui > .navbar { min-height: 64px; border-bottom: 1px solid var(--p-line); padding: 8px 24px !important; box-shadow: none; }
+.plates-ui > .navbar.bg-light { background: var(--p-paper) !important; }
+.plates-ui .navbar-brand img { max-height: 28px; max-width: 125px; }
+.plates-ui .navbar .nav-link { color: var(--p-steel); font-size: 13px; }
+.plates-ui .navbar .nav-link:hover { color: var(--p-blue); }
+.plates-ui .navbar .username-lia { display: inline-block; max-width: 240px; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; }
+.plates-ui .plates-menu { display: none; }
+.plates-ui .plates-rail { background: #17212b !important; color: #fff; --bs-offcanvas-width: 280px; }
+.plates-ui .plates-rail .offcanvas-header { display: flex; padding: 30px 24px 24px; }
+.plates-ui .plates-brand { display: flex; align-items: center; gap: 12px; color: #fff; font: 800 23px/1.2 'Plates Display', sans-serif; text-decoration: none; letter-spacing: -.04em; min-width: 0; overflow-wrap: anywhere; }
+.plates-ui .plates-brand-mark { width: 34px; height: 34px; display: grid; place-items: center; background: #1f4fd8; border-radius: 8px; flex-shrink: 0; font-size: 19px; }
+.plates-ui .plates-rail .offcanvas-body { display: flex; flex-direction: column; padding: 0 16px 20px; overflow-y: auto; background: transparent !important; }
+.plates-ui .plates-workspace { display: flex; flex-direction: column; gap: 4px; background: #25323f; border: 1px solid #344251; padding: 14px 12px; border-radius: 8px; margin-bottom: 24px; }
+.plates-ui .plates-workspace strong { font-size: 14px; font-weight: 500; overflow-wrap: anywhere; }
+.plates-ui .plates-workspace > span:not(.plates-eyebrow) { font-size: 12px; color: #a9b4c0; }
+.plates-ui .plates-eyebrow { color: var(--p-steel); font-size: 11px; font-weight: 500; line-height: 1.5; letter-spacing: .09em; text-transform: uppercase; }
+.plates-ui .plates-rail .plates-eyebrow { color: #a9b4c0; font-size: 10px; }
+.plates-ui .plates-nav-label { color: #a9b4c0; font-size: 10px; letter-spacing: .12em; text-transform: uppercase; margin: 24px 12px 8px; }
+.plates-ui .plates-rail-link { display: flex; gap: 12px; align-items: center; min-height: 44px; padding: 10px 12px; margin-block: 3px; border-radius: 8px; font-size: 14px; line-height: 1.4; color: #a9b4c0; text-decoration: none; border: 1px solid transparent; }
+.plates-ui .plates-rail-link i { font-size: 17px; flex-shrink: 0; }
+.plates-ui .plates-rail-link:hover, .plates-ui .plates-rail-link[aria-current="page"] { color: #fff; background: #25323f; }
+.plates-ui .plates-rail-link[aria-current="page"] { border-color: #344251; }
+.plates-ui .plates-rail-footer { margin-top: auto; padding-top: 32px; }
+.plates-ui .plates-rail-footer .plates-rail-link { font-size: 12px; }
+.plates-ui .plates-rail-footer > .plates-eyebrow { display: block; margin: 18px 12px 0; }
+.plates-ui .plates-page-heading { display: flex; justify-content: space-between; align-items: center; gap: 24px; margin: 0 0 28px; }
+.plates-ui .plates-page-heading .plates-eyebrow { margin: 0 0 8px; }
+.plates-ui .plates-page-heading h1 { font-size: 32px; font-weight: 800; line-height: 1.2; margin: 0 0 10px; }
+.plates-ui .plates-page-heading p:last-child { color: var(--p-steel); margin: 0; max-width: 650px; }
+.plates-ui .plates-primary-action { flex-shrink: 0; }
+.plates-ui .plates-heading-detail { display: block; color: var(--p-steel); font: 400 16px/1.5 'Plates Text', sans-serif; letter-spacing: 0; margin-top: 8px; overflow-wrap: anywhere; }
+.plates-ui .plates-mail-summary { display: grid; grid-template-columns: 1fr 1fr 1.6fr; background: var(--p-paper); border: 1px solid var(--p-line); border-radius: 12px; margin-bottom: 28px; }
+.plates-ui .plates-mail-summary > * { min-width: 0; padding: 22px 24px; }
+.plates-ui .plates-mail-summary > a { display: grid; grid-template-columns: 1fr auto; gap: 6px; color: var(--p-steel); text-decoration: none; border-right: 1px solid var(--p-line); }
+.plates-ui .plates-mail-summary > a:hover { background: var(--p-blue-tint); }
+.plates-ui .plates-mail-summary > a:first-child { border-radius: 12px 0 0 12px; }
+.plates-ui .plates-mail-summary strong { grid-column: 1; color: var(--p-iron); font: 800 30px/1.2 'Plates Display', sans-serif; font-variant-numeric: tabular-nums; }
+.plates-ui .plates-mail-summary a > i { grid-row: 1; grid-column: 2; color: var(--p-blue); }
+.plates-ui .plates-summary-note { display: flex; align-items: center; gap: 16px; color: var(--p-steel); font-size: 13px; }
+.plates-ui .plates-summary-note i { font-size: 26px; color: var(--p-blue); }
+.plates-ui .plates-summary-note p { margin: 0; }
+.plates-ui .plates-domain-filter { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; font-size: 13px; }
+.plates-ui .plates-domain-filter[hidden] { display: none; }
+.plates-ui .plates-domain-filter select { width: auto; min-width: 200px; }
+
+/* Existing mailcow widgets, restyled without changing their form/API contracts. */
+.plates-ui .card { --bs-card-bg: var(--p-paper); --bs-card-border-color: var(--p-line); background: var(--p-paper); color: var(--p-iron); border: 1px solid var(--p-line); border-radius: 12px; box-shadow: none; }
+.plates-ui .card-header { color: var(--p-iron); background: transparent; padding: 18px 22px; border-bottom: 1px solid var(--p-line); font-size: 17px !important; font-weight: 500; }
+.plates-ui .card-body { padding: 22px; }
+.plates-ui .card-footer { background: transparent; border-top-color: var(--p-line); }
+.plates-ui .btn { border-radius: 8px; box-shadow: none !important; font: 500 13px/1.5 'Plates Text', sans-serif; padding: 8px 13px; white-space: normal; }
+.plates-ui .btn-sm, .plates-ui .btn-xs { padding: 6px 10px; font-size: 12px; }
+.plates-ui .btn:is(.btn-primary, .btn-success) { --bs-btn-bg: #1f4fd8; --bs-btn-border-color: #1f4fd8; --bs-btn-color: #fff; --bs-btn-hover-bg: #173eae; --bs-btn-hover-border-color: #173eae; --bs-btn-hover-color: #fff; --bs-btn-active-bg: #173eae; --bs-btn-active-border-color: #173eae; --bs-btn-disabled-bg: #5b6876; --bs-btn-disabled-border-color: #5b6876; color: #fff; background: #1f4fd8; border-color: #1f4fd8; }
+.plates-ui .btn:is(.btn-primary, .btn-success):hover { background: #173eae; border-color: #173eae; }
+.plates-ui .btn:is(.btn-secondary, .btn-default, .btn-light, .btn-info) { color: var(--p-iron); background: var(--p-paper); border-color: var(--p-line); }
+.plates-ui .btn:is(.btn-secondary, .btn-default, .btn-light, .btn-info):hover { background: var(--p-wash); border-color: var(--p-steel); }
+.plates-ui .btn-danger { color: var(--p-red); background: var(--p-paper); border-color: var(--p-line); }
+.plates-ui .btn-danger:hover { background: var(--p-red-tint); border-color: var(--p-red); }
+.plates-ui .btn-group { max-width: 100%; }
+.plates-ui .btn-group > .btn:not(:last-child) { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.plates-ui .btn-group > .btn:not(:first-child) { border-top-left-radius: 0; border-bottom-left-radius: 0; }
+.plates-ui :is(.form-control, .form-select) { color: var(--p-iron); background-color: var(--p-paper); border: 1px solid var(--p-line); border-radius: 8px; min-height: 40px; padding: 8px 12px; font-size: 14px; box-shadow: none; }
+.plates-ui :is(.form-control, .form-select):focus { border-color: var(--p-blue); box-shadow: 0 0 0 2px var(--p-blue-tint); }
+.plates-ui .form-control::placeholder { color: var(--p-steel); }
+.plates-ui .form-control:disabled { background-color: var(--p-wash); }
+.plates-ui .control-label, .plates-ui .form-label { font-size: 13px; font-weight: 500; padding-top: 8px; }
+.plates-ui .form-check-input { border-color: var(--p-steel); }
+.plates-ui .form-check-input:checked { background-color: #1f4fd8; border-color: #1f4fd8; }
+.plates-ui .dropdown-menu { --bs-dropdown-bg: var(--p-paper); --bs-dropdown-color: var(--p-iron); --bs-dropdown-link-color: var(--p-iron); --bs-dropdown-link-hover-bg: var(--p-wash); --bs-dropdown-link-hover-color: var(--p-iron); --bs-dropdown-link-active-bg: #1f4fd8; --bs-dropdown-link-active-color: #fff; --bs-dropdown-border-color: var(--p-line); padding: 8px; border-radius: 8px; box-shadow: none; }
+.plates-ui .dropdown-item { padding: 9px 12px; border-radius: 5px; font-size: 13px; }
+.plates-ui .dropdown-header { color: var(--p-steel); }
+.plates-ui .nav-tabs { gap: 4px; border-bottom: 1px solid var(--p-line); padding-bottom: 8px; }
+.plates-ui .nav-tabs .nav-link { color: var(--p-steel); border: 0; border-radius: 8px; padding: 10px 14px; font-size: 13px; }
+.plates-ui .nav-tabs .nav-link:is(.active, :hover) { background: var(--p-blue-tint); color: var(--p-blue); }
+.plates-ui .plates-mail-tabs { gap: 6px; }
+.plates-ui .table { --bs-table-color: var(--p-iron); --bs-table-bg: var(--p-paper); --bs-table-striped-bg: var(--p-paper); --bs-table-striped-color: var(--p-iron); --bs-table-hover-bg: var(--p-wash); color: var(--p-iron); border-color: var(--p-line); font-size: 13px; }
+.plates-ui .table > :not(caption) > * > * { padding: 16px 12px; border-bottom-color: var(--p-line); box-shadow: none; }
+.plates-ui .table thead th { font-size: 11px; font-weight: 500; color: var(--p-steel); background-color: var(--p-paper); vertical-align: middle; }
+.plates-ui .table tbody tr:hover > * { background-color: var(--p-wash); }
+.plates-ui .table td { vertical-align: middle; }
+.plates-ui .table td .btn { min-height: 34px; }
+.plates-ui .dataTables_wrapper > .row { align-items: center; gap: 12px 0; margin-bottom: 20px; }
+.plates-ui .dataTables_filter label, .plates-ui .dataTables_length label { font-size: 12px; color: var(--p-steel); }
+.plates-ui .dataTables_filter input { min-width: 220px; }
+.plates-ui .dataTables_info { font-size: 12px; color: var(--p-steel); }
+.plates-ui .page-link { background: var(--p-paper); border-color: var(--p-line); color: var(--p-blue); }
+.plates-ui .page-item.active .page-link { background: #1f4fd8; border-color: #1f4fd8; color: #fff; }
+.plates-ui .page-item.disabled .page-link { background: var(--p-wash); color: var(--p-steel); border-color: var(--p-line); }
+.plates-ui .badge { border-radius: 5px; font-weight: 500; padding: 5px 7px; }
+.plates-ui .badge.bg-success, .plates-ui .alert-success { background: var(--p-green-tint) !important; color: var(--p-green) !important; }
+.plates-ui .badge.bg-warning, .plates-ui .alert-warning { background: var(--p-yellow-tint) !important; color: var(--p-yellow) !important; }
+.plates-ui .badge.bg-danger, .plates-ui .alert-danger { background: var(--p-red-tint) !important; color: var(--p-red) !important; }
+.plates-ui .badge:is(.bg-info, .bg-secondary), .plates-ui .alert-info { background: var(--p-wash) !important; color: var(--p-steel) !important; }
+.plates-ui .badge.bg-primary { background: var(--p-blue-tint) !important; color: var(--p-blue) !important; }
+.plates-ui .alert { border: 1px solid var(--p-line); border-radius: 8px; }
+.plates-ui .progress { background-color: var(--p-wash); height: 12px; border-radius: 4px; }
+.plates-ui .progress-bar { background-color: #1f4fd8; font-size: 9px; line-height: 12px; }
+.plates-ui .progress-bar-danger { background-color: #cf3529; }
+.plates-ui .progress-bar-warning { background-color: #7a5600; }
+.plates-ui .footer { color: var(--p-steel); font-size: 11px; padding-bottom: 24px; }
+.plates-ui .footer .version { opacity: .8; }
+
+/* Bootstrap still owns modal focus trapping, Escape, backdrop and submit behavior. */
+.plates-ui .modal-content { background: var(--p-paper); color: var(--p-iron); border: 1px solid var(--p-line); border-radius: 12px; box-shadow: none; }
+.plates-ui .modal-header, .plates-ui .modal-footer { padding: 20px 24px; border-color: var(--p-line); }
+.plates-ui .modal-body { padding: 24px; }
+.plates-ui .modal-title { font-size: 19px; }
+.plates-ui .modal-backdrop { --bs-backdrop-opacity: .4; }
+.plates-ui .plates-edit-page > .row > .col-md-12 > .card > .card-header { display: none; }
+.plates-ui .plates-edit-page > a:last-of-type { display: none; }
+.plates-ui .plates-edit-page .form-horizontal > .row { margin-bottom: 20px !important; }
+
+/* Guest flows (login, MFA, password reset) keep their upstream markup. */
+.plates-guest > .container.flex-grow-1 { padding-top: 40px; }
+.plates-guest .card { border-radius: 12px; }
+.plates-guest .navbar { padding-inline: 32px !important; }
+
+@media (min-width: 992px) {
+  .plates-ui .plates-rail { position: fixed; inset: 0 auto 0 0; width: var(--p-rail-width); height: 100dvh; z-index: 1040; display: flex; flex-direction: column; }
+  .plates-ui .plates-rail .offcanvas-body { flex-grow: 1; }
+  .plates-ui .plates-rail .btn-close { display: none; }
+  .plates-signed-in > :is(.container, .navbar) { margin-left: var(--p-rail-width); margin-right: 0; }
+  .plates-signed-in > .container { max-width: calc(1600px - var(--p-rail-width)); }
+  .plates-signed-in > .navbar .navbar-brand { display: none; }
+}
+
+@media (max-width: 991.98px) {
+  .plates-ui .plates-menu { display: grid; place-items: center; position: fixed; top: 13px; left: 16px; width: 40px; height: 40px; z-index: 1031; padding: 0; font-size: 21px; }
+  .plates-signed-in > .navbar { padding-left: 72px !important; min-height: 66px; }
+  .plates-signed-in > .container { padding-inline: 20px; }
+  .plates-ui .plates-page-heading h1 { font-size: 28px; }
+  .plates-ui .plates-mail-summary { grid-template-columns: 1fr 1fr; }
+  .plates-ui .plates-mail-summary > a:nth-child(2) { border-right: 0; border-radius: 0 12px 12px 0; }
+  .plates-ui .plates-summary-note { display: none; }
+}
+
+@media (max-width: 767.98px) {
+  .plates-signed-in > .container.flex-grow-1 { padding-top: 12px; }
+  .plates-ui .plates-page-heading { margin-bottom: 20px; }
+  .plates-ui .plates-page-heading:has(.plates-primary-action) { align-items: flex-start; flex-direction: column; gap: 16px; }
+  .plates-ui .plates-page-heading h1 { font-size: 26px; }
+  .plates-ui .plates-page-heading p:last-child { font-size: 13px; }
+  .plates-ui .plates-mail-summary { margin-bottom: 20px; }
+  .plates-ui .plates-mail-summary > * { padding: 16px 18px; }
+  .plates-ui .plates-mail-summary strong { font-size: 26px; }
+  .plates-ui .card-body, .plates-ui .card-header { padding: 16px; }
+  .plates-ui .btn { min-height: 40px; }
+  .plates-ui .plates-mail-tabs { display: flex !important; flex-wrap: wrap; }
+  .plates-ui .plates-mail-tabs .nav-link { padding: 10px 11px; }
+  /* mailcow turns tabs into an accordion on phones. Opt back into real tabs only
+     after the adapter is ready; keep its upstream accordion without JavaScript. */
+  .plates-ui .plates-mail-ready > .row > .col-md-12 > .tab-content > .tab-pane { display: none !important; }
+  .plates-ui .plates-mail-ready > .row > .col-md-12 > .tab-content > .tab-pane.active { display: block !important; }
+  .plates-ui .plates-mail-ready .card-header > button[data-bs-toggle="collapse"] { display: none !important; }
+  .plates-ui .plates-mail-ready .card-header > span.d-none { display: block !important; }
+  .plates-ui .plates-mail-ready .card-header > span.d-md-block { display: block !important; }
+  .plates-ui .plates-mail-ready .card-body.collapse:not(.show) { display: block; }
+  .plates-ui .dataTables_filter { text-align: left !important; }
+  .plates-ui .dataTables_filter input { min-width: 0; max-width: 65vw; }
+  .plates-ui .table > :not(caption) > * > * { padding: 14px 8px; }
+  .plates-ui .plates-domain-filter select { flex: 1; min-width: 160px; }
+  .plates-ui .plates-domain-filter label { width: 100%; }
+  .plates-ui .modal-dialog { margin: 16px 8px; min-height: calc(100% - 32px); display: flex; align-items: flex-end; }
+  .plates-ui .modal-content { max-height: calc(100dvh - 32px); border-radius: 16px 16px 8px 8px; }
+  .plates-ui .modal-body { padding: 16px; overflow-y: auto; }
+  .plates-ui .modal-header, .plates-ui .modal-footer { padding: 16px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .plates-ui *, .plates-ui *::before, .plates-ui *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; }
+}

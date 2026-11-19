@@ -1,0 +1,5 @@
+{% extends '@upstream/admin.twig' %}
+{% block content %}
+{% include 'plates/page-heading.twig' with {title: plates.text.settings, hint: plates.text.settings_hint} %}
+{{ parent() }}
+{% endblock %}

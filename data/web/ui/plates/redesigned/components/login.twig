@@ -1,0 +1,55 @@
+{% set password_login = login_mode != 'user' or custom_login.force_sso != 1 %}
+<section class="p-login" data-p-login>
+  <aside class="p-login-story">
+    <a class="p-login-brand" href="/">{% include 'plates/brand.twig' %}</a>
+    <div class="p-login-intro"><span class="p-kicker">{{ plates.text.workspace }}</span><h1>{{ plates.text.login_intro }}</h1><p>{{ plates.text.login_description }}</p></div>
+    <div class="p-login-promises">
+      <div><i class="bi bi-shield-check" aria-hidden="true"></i><p><strong>{{ plates.text.login_secure }}</strong><span>{{ plates.text.login_secure_hint }}</span></p></div>
+      <div><i class="bi bi-inboxes" aria-hidden="true"></i><p><strong>{{ plates.text.login_organised }}</strong><span>{{ plates.text.login_organised_hint }}</span></p></div>
+    </div>
+    <span class="p-login-byline">mailcow · Plates</span>
+  </aside>
+  <div class="p-login-panel">
+    <div class="p-login-utilities">
+      <details class="p-language"><summary>{{ available_languages[mailcow_locale]|default('English') }} <i class="bi bi-chevron-down" aria-hidden="true"></i></summary><div>{% for key, val in available_languages %}<a href="?{{ query_string({'lang': key}) }}" lang="{{ key }}">{{ val }}</a>{% endfor %}</div></details>
+      <label class="p-theme-switch"><i class="bi bi-moon" aria-hidden="true"></i><input type="checkbox" id="dark-mode-toggle" aria-label="{{ plates.text.appearance }}"></label>
+    </div>
+    <div class="p-login-form-wrap">
+      <p class="p-kicker">{{ plates.text.welcome }}</p>
+      <h2>{% if oauth2_request %}{{ lang.oauth2.authorize_app }}{% else %}{{ plates.text.login_title }}{% endif %}</h2>
+      {% if not oauth2_request %}
+      <nav class="p-login-modes" aria-label="{{ plates.text.login_mode }}">
+        {% if login_mode == 'user' or custom_login.hide_user_quicklink != 1 %}<a href="/" {% if login_mode == 'user' %}aria-current="page"{% endif %}>{{ lang.login.login_usertext }}</a>{% endif %}
+        {% if login_mode == 'domainadmin' or custom_login.hide_domainadmin_quicklink != 1 %}<a href="/domainadmin" {% if login_mode == 'domainadmin' %}aria-current="page"{% endif %}>{{ lang.login.login_domainadmintext }}</a>{% endif %}
+        {% if login_mode == 'admin' or custom_login.hide_admin_quicklink != 1 %}<a href="/admin" {% if login_mode == 'admin' %}aria-current="page"{% endif %}>{{ lang.login.login_admintext }}</a>{% endif %}
+      </nav>
+      {% endif %}
+      {% if ui_texts.ui_announcement_text and ui_texts.ui_announcement_active %}<div class="p-notice rot-enc" role="status">{{ ui_texts.ui_announcement_text|rot13 }}</div>{% endif %}
+      {% if is_mobileconfig %}<div class="p-notice">{{ lang.login.mobileconfig_info }}</div>{% endif %}
+      {% if password_login %}
+      <form method="post" class="p-form p-login-form" data-p-validate>
+        <label for="login_user">{{ lang.login.username }}<input name="login_user" id="login_user" type="{{ is_mobileconfig ? 'email' : 'text' }}" autocomplete="username" autocapitalize="none" autocorrect="off" required autofocus placeholder="{{ login_mode == 'user' ? lang.login.email : lang.login.username }}"></label>
+        <label for="pass_user">{{ lang.login.password }}<span class="p-password"><input name="pass_user" id="pass_user" type="password" autocomplete="current-password" required><button type="button" data-p-password="pass_user" aria-label="{{ plates.text.password_show }}" aria-pressed="false"><i class="bi bi-eye" aria-hidden="true"></i></button></span></label>
+        {% if login_mode == 'user' %}<a class="p-forgot" href="/reset-password">{{ lang.login.forgot_password }}</a>{% endif %}
+        <button class="btn btn-primary p-button p-button-primary p-login-submit" type="submit" value="Login">{{ lang.login.login }} <i class="bi bi-arrow-right" aria-hidden="true"></i></button>
+      </form>
+      {% endif %}
+      {% if password_login or (login_mode == 'user' and has_iam_sso) %}
+      <div class="p-login-alternatives">
+        {% if password_login %}<span>{{ lang.login.other_logins }}</span><button class="btn btn-secondary p-button" type="button" id="fido2-login"><i class="bi bi-fingerprint" aria-hidden="true"></i>{{ login_mode == 'admin' ? plates.text.passkey : lang.login.fido2_webauthn }}</button>{% endif %}
+        {% if login_mode == 'user' and has_iam_sso %}<a class="btn btn-secondary p-button" href="/?iam_sso=1"><i class="bi bi-box-arrow-in-right" aria-hidden="true"></i>{{ lang.admin.iam_sso }}</a>{% endif %}
+      </div>
+      {% endif %}
+      {% if login_delay %}<div class="p-notice" role="status">{{ lang.login.delayed|format(login_delay) }}</div>{% endif %}
+      <div id="fido2-alerts" role="status" aria-live="polite"></div>
+      {% if not oauth2_request and not hide_mailcow_apps %}
+      <div class="p-login-apps">
+        {% for app in mailcow_apps %}{% if not app.hide and (not skip_sogo or not is_uri('SOGo', app.link)) %}<a href="{{ app.link }}" {% if app.description %}title="{{ app.description }}"{% endif %}>{{ app.name }} <i class="bi bi-arrow-up-right" aria-hidden="true"></i></a>{% endif %}{% endfor %}
+        {% for row in app_links %}{% for key, val in row %}{% if not val.hide %}<a href="{{ val.link }}">{{ key }} <i class="bi bi-arrow-up-right" aria-hidden="true"></i></a>{% endif %}{% endfor %}{% endfor %}
+      </div>
+      {% endif %}
+      {% if not oauth2_request and ui_texts.help_text %}<details class="p-login-help"><summary>{{ lang.start.help }}</summary><div>{{ ui_texts.help_text|raw }}</div></details>{% endif %}
+      {% if ui_texts.ui_footer %}<div class="p-login-footer">{{ ui_texts.ui_footer|raw }}</div>{% endif %}
+    </div>
+  </div>
+</section>

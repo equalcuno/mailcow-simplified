@@ -1,0 +1,15 @@
+{% extends '@upstream/edit/mailbox.twig' %}
+{% block inner_content %}
+{% if result %}
+<section class="p-edit-layout"><div class="p-edit-panel"><header><i class="bi bi-envelope" aria-hidden="true"></i><div><h2>{{ plates.text.basic_details }}</h2><p>{{ plates.text.basic_hint }}</p></div></header>
+  <form class="p-form" data-id="plates_edit_mailbox" data-p-validate>
+    <label>{{ plates.text.address }}<input value="{{ result.username }}" readonly aria-readonly="true"></label>
+    <label>{{ plates.text.name }}<input name="name" value="{{ result.name }}"></label>
+    <label>{{ plates.text.quota }}<input type="number" name="quota" value="{{ result.quota / 1048576 }}" min="0" max="{{ result.max_new_quota / 1048576 }}" required></label>
+    <label>{{ plates.text.status }}<select name="active" data-p-native><option value="1" {% if result.active == 1 %}selected{% endif %}>{{ plates.text.active }}</option><option value="0" {% if result.active == 0 %}selected{% endif %}>{{ plates.text.inactive }}</option></select></label>
+    <footer><a class="btn btn-secondary p-button" href="{{ return_to }}">{{ plates.text.cancel }}</a><button type="button" class="btn btn-primary p-button p-button-primary" data-action="edit_selected" data-id="plates_edit_mailbox" data-item="{{ result.username }}" data-api-url="edit/mailbox" data-api-attr="{}">{{ plates.text.save }}</button></footer>
+  </form>
+</div><aside class="p-edit-note"><i class="bi bi-shield-lock" aria-hidden="true"></i><h3>{{ plates.text.security }}</h3><p>{{ plates.text.security_hint }}</p><a href="#p-mailbox-advanced" data-p-open-advanced>{{ plates.text.advanced }} <i class="bi bi-arrow-down" aria-hidden="true"></i></a></aside></section>
+<details class="p-advanced" id="p-mailbox-advanced"><summary><span><strong>{{ plates.text.advanced }}</strong><small>{{ plates.text.security_hint }}</small></span><i class="bi bi-chevron-down" aria-hidden="true"></i></summary><div class="p-advanced-body">{{ parent() }}</div></details>
+{% else %}{{ parent() }}{% endif %}
+{% endblock %}

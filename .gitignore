@@ -81,3 +81,7 @@ create_cold_standby.sh
 data/conf/postfix/postfix-tlspol
 tests/php/vendor/
 tests/php/.phpunit.cache/
+tests/ui/node_modules/
+/ui-backups/
+/.plates-ui-state.json
+/.update-ui.lock

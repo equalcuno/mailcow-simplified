@@ -1,0 +1,29 @@
+<dialog class="p-sheet" id="p-create-mailbox" aria-labelledby="p-create-mailbox-title"><header><div><p class="p-kicker">{{ plates.text.workspace }}</p><h2 id="p-create-mailbox-title">{{ lang.mailbox.add_mailbox }}</h2></div><button type="button" class="p-icon-button" data-p-dialog-close aria-label="{{ plates.text.close_dialog }}"><i class="bi bi-x-lg" aria-hidden="true"></i></button></header>
+  <form class="p-form" data-id="plates_add_mailbox" data-p-validate autocomplete="off">
+    <p class="p-form-hint">{{ plates.text.mailbox_hint }}</p>
+    <input type="hidden" name="authsource" value="mailcow">
+    <label>{{ plates.text.name }}<input name="name" autocomplete="off"></label>
+    <div class="p-form-columns"><label>{{ plates.text.mailbox_address }}<input name="local_part" required autocapitalize="none" pattern="[^@\s]+" placeholder="alex"></label><label>{{ lang.add.domain }}<select name="domain" data-p-native required>{% for domain in domains %}<option>{{ domain }}</option>{% endfor %}</select></label></div>
+    <label>{{ plates.text.quota }}<input name="quota" type="number" min="0" required value="1024"></label>
+    <label>{{ lang.login.password }}<input name="password" type="password" required autocomplete="new-password" data-formcache-skip></label>
+    <label>{{ plates.text.password_confirm }}<input name="password2" type="password" required autocomplete="new-password" data-formcache-skip></label>
+    <footer><button type="button" class="btn btn-secondary p-button" data-p-dialog-close>{{ plates.text.cancel }}</button><button type="button" class="btn btn-primary p-button p-button-primary" data-action="add_item" data-id="plates_add_mailbox" data-api-url="add/mailbox" data-api-attr="{}">{{ plates.text.create }}</button></footer>
+  </form>
+</dialog>
+{% if mailcow_cc_role == 'admin' %}
+<dialog class="p-sheet" id="p-create-domain" aria-labelledby="p-create-domain-title"><header><div><p class="p-kicker">{{ plates.text.workspace }}</p><h2 id="p-create-domain-title">{{ lang.mailbox.add_domain }}</h2></div><button type="button" class="p-icon-button" data-p-dialog-close aria-label="{{ plates.text.close_dialog }}"><i class="bi bi-x-lg" aria-hidden="true"></i></button></header>
+  <form class="p-form" data-id="plates_add_domain" data-p-validate>
+    <input type="hidden" name="active" value="1"><input type="hidden" name="restart_sogo" value="1">
+    <label>{{ lang.add.domain }}<input name="domain" placeholder="example.org" autocapitalize="none" required></label>
+    <label>{{ plates.text.domain_description }}<input name="description"></label>
+    <p class="p-form-hint">{{ plates.text.domain_defaults }}</p>
+    <div class="p-form-columns"><label>{{ lang.mailbox.mailboxes }}<input name="mailboxes" type="number" min="0" value="10" required></label><label>{{ lang.mailbox.aliases }}<input name="aliases" type="number" min="0" value="100" required></label></div>
+    <label>{{ plates.text.quota }}<input name="quota" type="number" min="0" value="10240" required></label>
+    <input type="hidden" name="defquota" value="1024"><input type="hidden" name="maxquota" value="10240">
+    <footer><button type="button" class="btn btn-secondary p-button" data-p-dialog-close>{{ plates.text.cancel }}</button><button type="button" class="btn btn-primary p-button p-button-primary" data-action="add_item" data-id="plates_add_domain" data-api-url="add/domain" data-api-attr="{}">{{ plates.text.create }}</button></footer>
+  </form>
+</dialog>
+{% endif %}
+<dialog class="p-sheet" id="p-create-alias" aria-labelledby="p-create-alias-title"><header><h2 id="p-create-alias-title">{{ lang.mailbox.add_alias }}</h2><button type="button" class="p-icon-button" data-p-dialog-close aria-label="{{ plates.text.close_dialog }}"><i class="bi bi-x-lg" aria-hidden="true"></i></button></header>
+  <form class="p-form" data-id="plates_add_alias" data-p-validate><input type="hidden" name="active" value="1"><input type="hidden" name="internal" value="0"><input type="hidden" name="sender_allowed" value="1"><input type="hidden" name="sogo_visible" value="{{ skip_sogo ? 0 : 1 }}"><label>{{ plates.text.address }}<textarea name="address" required rows="2" autocapitalize="none" placeholder="team@example.org"></textarea></label><label>{{ plates.text.destination }}<textarea name="goto" required rows="3" placeholder="alex@example.org"></textarea></label><footer><button class="btn btn-secondary p-button" type="button" data-p-dialog-close>{{ plates.text.cancel }}</button><button class="btn btn-primary p-button p-button-primary" type="button" data-action="add_item" data-id="plates_add_alias" data-api-url="add/alias" data-api-attr="{}">{{ plates.text.create }}</button></footer></form>
+</dialog>

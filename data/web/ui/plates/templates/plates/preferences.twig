@@ -1,0 +1,23 @@
+<section id="p-preferences" class="p-preferences p-ui-settings" aria-labelledby="p-preferences-title">
+  <form data-p-preferences>
+    <header><div><span class="p-pref-eyebrow">{{ plates.text.browser_preference }}</span><h2 id="p-preferences-title">{{ plates.text.appearance }}</h2></div></header>
+    <fieldset><legend>{{ plates.text.interface }}</legend>
+      <label><input type="radio" name="ui" value="plates" {% if plates.enabled %}checked{% endif %}><span><strong>Plates</strong><small>{{ plates.text.plates_option }}</small></span></label>
+      <label><input type="radio" name="ui" value="stock" {% if not plates.enabled %}checked{% endif %}><span><strong>{{ plates.text.classic }}</strong><small>{{ plates.text.classic_option }}</small></span></label>
+    </fieldset>
+    <fieldset data-p-component-options><legend>{{ plates.text.components }}</legend>
+      <label><input type="radio" name="components" value="redesigned" {% if plates.components == 'redesigned' %}checked{% endif %}><span><strong>{{ plates.text.redesigned }}</strong><small>{{ plates.text.redesigned_option }}</small></span></label>
+      <label><input type="radio" name="components" value="original" {% if plates.components == 'original' %}checked{% endif %}><span><strong>{{ plates.text.original }}</strong><small>{{ plates.text.original_option }}</small></span></label>
+    </fieldset>
+    <footer><span>{{ plates.text.browser_preference }}</span><button class="btn btn-primary" type="submit">{{ plates.text.apply }}</button></footer>
+  </form>
+  {% if mailcow_cc_role == 'admin' %}
+  <section class="p-branding-settings">
+    <h3>{{ plates.text.branding }}</h3><p>{{ plates.text.branding_hint }}</p>
+    <form action="/admin/system" method="post" class="p-branding-form"><label>{{ plates.text.business_name }}<input type="text" name="business_name" value="{{ ui_texts.main_name|brand_text }}" maxlength="120" required></label><button type="submit" name="submit_business_name" value="1" class="btn btn-primary">{{ plates.text.save }}</button></form>
+    <form action="/admin/system" method="post" enctype="multipart/form-data" class="p-branding-form"><label>{{ plates.text.business_logo }}<input type="file" name="main_logo" accept="image/png,image/jpeg,image/svg+xml,image/gif" required></label><label>{{ plates.text.logo_dark }}<input type="file" name="main_logo_dark" accept="image/png,image/jpeg,image/svg+xml,image/gif"></label><button type="submit" name="submit_main_logo" value="1" class="btn btn-primary">{{ plates.text.save }}</button></form>
+    <form action="/admin/system" method="post" enctype="multipart/form-data" class="p-branding-form"><label>{{ plates.text.favicon }}<span class="p-favicon-preview"><img src="{{ plates.favicon }}" alt="">{{ plates.text.favicon_hint }}</span><input type="file" name="ui_favicon" accept="image/png,image/vnd.microsoft.icon,image/x-icon,.ico" required></label><button type="submit" name="submit_ui_favicon" value="1" class="btn btn-primary">{{ plates.text.save }}</button></form>
+    <form action="/admin/system" method="post" class="p-branding-form"><button type="submit" name="reset_ui_favicon" value="1" class="btn btn-secondary">{{ plates.text.favicon_reset }}</button></form>
+  </section>
+  {% endif %}
+</section>

@@ -1,0 +1,48 @@
+{% set mailbox_path = mailcow_cc_role == 'admin' ? '/admin/mailbox' : '/domainadmin/mailbox' %}
+{% set navigation_acl = acl|default(plates.acl) %}
+{% set domains_hash = plates.components == 'redesigned' ? 'domains' : 'tab-domains' %}
+{% set mailboxes_hash = plates.components == 'redesigned' ? 'mailboxes' : 'tab-mailboxes' %}
+{% set aliases_hash = plates.components == 'redesigned' ? 'aliases' : 'tab-mbox-aliases' %}
+<aside class="plates-rail offcanvas-lg offcanvas-start" tabindex="-1" id="plates-navigation" aria-labelledby="plates-brand">
+  <div class="offcanvas-header">
+    <a id="plates-brand" class="plates-brand" href="{{ mailcow_cc_role == 'admin' ? '/admin/dashboard' : '/' }}">
+      {% include 'plates/brand.twig' %}
+    </a>
+    <button class="btn-close btn-close-white" type="button" data-bs-dismiss="offcanvas" data-bs-target="#plates-navigation" aria-label="{{ plates.text.close }}"></button>
+  </div>
+  <div class="offcanvas-body">
+    <div class="plates-workspace">
+      <span class="plates-eyebrow">{{ plates.text.workspace }}</span>
+      <strong>{{ mailcow_cc_username }}</strong>
+      <span>{{ mailcow_cc_role == 'admin' ? lang.admin.admin : (mailcow_cc_role == 'domainadmin' ? lang.admin.domain_admins : lang.header.user_settings) }}</span>
+      {% if dual_login %}<span>{{ dual_login.username }}</span>{% endif %}
+      {% if not is_master %}<span>[ slave ]</span>{% endif %}
+    </div>
+    <nav aria-label="{{ plates.text.navigation }}">
+      {% if mailcow_cc_role == 'admin' %}
+        <a class="plates-rail-link" href="/admin/dashboard" {% if is_uri('dashboard') %}aria-current="page"{% endif %}><i class="bi bi-grid" aria-hidden="true"></i>{{ plates.text.overview }}</a>
+      {% endif %}
+      {% if mailcow_cc_role in ['admin', 'domainadmin'] %}
+        <p class="plates-nav-label">{{ plates.text.manage }}</p>
+        <a class="plates-rail-link" href="{{ mailbox_path }}#{{ domains_hash }}" data-plates-tab="tab-domains"><i class="bi bi-globe2" aria-hidden="true"></i>{{ lang.mailbox.domains }}</a>
+        <a class="plates-rail-link" href="{{ mailbox_path }}#{{ mailboxes_hash }}" data-plates-tab="tab-mailboxes"><i class="bi bi-envelope" aria-hidden="true"></i>{{ lang.mailbox.mailboxes }}</a>
+        <a class="plates-rail-link" href="{{ mailbox_path }}#{{ aliases_hash }}" data-plates-tab="tab-mbox-aliases"><i class="bi bi-signpost-split" aria-hidden="true"></i>{{ lang.mailbox.aliases }}</a>
+        {% if navigation_acl.mailbox_groups == 1 %}
+          <a class="plates-rail-link" href="{{ mailbox_path }}#tab-groups" data-plates-tab="tab-groups"><i class="bi bi-people" aria-hidden="true"></i>{{ lang.groups.groups }}</a>
+        {% endif %}
+      {% endif %}
+      <a class="plates-rail-link" href="/quarantine" {% if is_uri('quarantine') %}aria-current="page"{% endif %}><i class="bi bi-shield-check" aria-hidden="true"></i>{{ lang.header.quarantine }}</a>
+      {% if mailcow_cc_role == 'admin' %}
+        <a class="plates-rail-link" href="/admin/queue" {% if is_uri('queue') %}aria-current="page"{% endif %}><i class="bi bi-send" aria-hidden="true"></i>{{ lang.queue.queue_manager }}</a>
+        <p class="plates-nav-label">{{ plates.text.system }}</p>
+        <a class="plates-rail-link" href="/admin/system" {% if is_uri('system') %}aria-current="page"{% endif %}><i class="bi bi-sliders" aria-hidden="true"></i>{{ plates.text.settings }}</a>
+      {% else %}
+        <a class="plates-rail-link" href="{{ mailcow_cc_role == 'domainadmin' ? '/domainadmin/user' : '/user' }}" {% if is_uri('user') %}aria-current="page"{% endif %}><i class="bi bi-person" aria-hidden="true"></i>{{ plates.text.account }}</a>
+      {% endif %}
+    </nav>
+    <div class="plates-rail-footer">
+      <a class="plates-rail-link" href="/?ui=stock"><i class="bi bi-arrow-left-right" aria-hidden="true"></i>{{ plates.text.stock }}</a>
+      <span class="plates-eyebrow">mailcow · Plates</span>
+    </div>
+  </div>
+</aside>

@@ -24,10 +24,15 @@
     }
   </script>
 
-  <link rel="shortcut icon" href="/favicon.png" type="image/png">
-  <link rel="icon" href="/favicon.png" type="image/png">
+  <link rel="shortcut icon" href="{{ plates.favicon|default('/favicon.png') }}">
+  <link rel="icon" href="{{ plates.favicon|default('/favicon.png') }}">
+  {% if plates.text is defined %}
+  <link rel="stylesheet" href="/ui/plates/assets/preferences.css?v={{ plates.version }}">
+  <script src="/ui/plates/assets/preferences.js?v={{ plates.version }}" defer></script>
+  {% endif %}
+  {% block presentation_head %}{% endblock %}
 </head>
-<body>
+<body {% block body_attributes %}{% endblock %}>
 <div class="overlay"></div>
 {% block navbar %}
 <nav class="navbar navbar-expand-lg navbar-light bg-light sticky-top p-0">
@@ -664,7 +669,7 @@ function recursiveBase64StrToArrayBuffer(obj) {
   {% endif %}
 
   // CSRF
-  $('<input type="hidden" value="{{ csrf_token }}">').attr('name', 'csrf_token').appendTo('form');
+  $('<input type="hidden" value="{{ csrf_token }}">').attr('name', 'csrf_token').appendTo('form:not([data-p-preferences])');
   if (sessionStorage.scrollTop != "undefined") {
     $(window).scrollTop(sessionStorage.scrollTop);
   }

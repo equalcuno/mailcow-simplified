@@ -1,0 +1,5 @@
+{% extends '@upstream/dashboard.twig' %}
+{% block content %}
+{% include 'plates/page-heading.twig' with {title: plates.text.overview, hint: plates.text.overview_hint} %}
+{{ parent() }}
+{% endblock %}

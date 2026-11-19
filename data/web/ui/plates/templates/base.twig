@@ -1,0 +1,55 @@
+{% extends '@upstream/base.twig' %}
+
+{% block presentation_head %}
+  {{ parent() }}
+  <style>
+    html { background: #f1f3f5; }
+    html[data-plates-dark] { background: #111922; color-scheme: dark; }
+    body.plates-ui { background: #f1f3f5; }
+    html[data-plates-dark] body.plates-ui { background: #111922; }
+    html[data-plates-pending] body > .container.flex-grow-1 { visibility: hidden; }
+  </style>
+  <script>
+    (() => {
+      const root = document.documentElement;
+      try {
+        const choice = localStorage.getItem('mailcow_theme');
+        if (choice === 'dark' || (choice !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches)) root.setAttribute('data-plates-dark', '');
+      } catch (_) {}
+      root.setAttribute('data-plates-pending', '');
+      // Fail open if a script fails; never leave working mailcow content inaccessible.
+      window.setTimeout(() => root.removeAttribute('data-plates-pending'), 1500);
+    })();
+  </script>
+  <link rel="preload" href="/ui/plates/assets/fonts/text.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/ui/plates/assets/plates.css?v={{ plates.version }}">
+  <script src="/ui/plates/assets/plates.js?v={{ plates.version }}" defer></script>
+  {% if plates.components == 'redesigned' %}
+  <script>
+    // Do this before body parsing: legacy fragment IDs live inside Advanced.
+    // Otherwise browsers can expand that section and scroll to the wrong view.
+    (() => {
+      const routes = {'#tab-domains': '#domains', '#tab-mailboxes': '#mailboxes', '#tab-mbox-aliases': '#aliases'};
+      if (/\/(admin|domainadmin)\/mailbox(?:\.php)?$/.test(location.pathname) && routes[location.hash]) {
+        try { const url = new URL(location.href); url.hash = routes[location.hash]; history.replaceState(null, '', url); } catch (_) {}
+      }
+    })();
+  </script>
+  <link rel="stylesheet" href="/ui/plates/assets/components.css?v={{ plates.version }}">
+  <script src="/ui/plates/assets/components.js?v={{ plates.version }}" defer></script>
+  {% endif %}
+{% endblock %}
+
+{% block body_attributes %}class="plates-ui {{ mailcow_cc_role ? 'plates-signed-in' : 'plates-guest' }}"{% endblock %}
+
+{% block navbar %}
+  <a class="plates-skip" href="#plates-main">{{ plates.text.skip }}</a>
+  {% if mailcow_cc_role %}
+    {% include 'plates/navigation.twig' %}
+    <button class="plates-menu btn btn-secondary" type="button" data-bs-toggle="offcanvas" data-bs-target="#plates-navigation" aria-controls="plates-navigation" aria-label="{{ plates.text.menu }}">
+      <i class="bi bi-list" aria-hidden="true"></i>
+    </button>
+  {% endif %}
+  {{ parent() }}
+  <div id="plates-main" class="plates-content-anchor" tabindex="-1"></div>
+{% endblock %}

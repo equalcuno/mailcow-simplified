@@ -1,0 +1,4 @@
+{% set business_name = ui_texts.main_name|default('mailcow')|brand_text %}
+<span class="p-business-logo">
+  {% if logo %}<img class="main-logo" src="{{ logo }}" alt=""><img class="main-logo-dark" src="{{ logo_dark|default(logo) }}" alt="">{% else %}<span aria-hidden="true">{{ business_name|first|upper }}</span>{% endif %}
+</span><span class="p-business-name">{{ business_name }}</span>

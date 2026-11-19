@@ -2,7 +2,7 @@ $(document).ready(function() {
   acl_data = JSON.parse(acl);
   // Set paging
   // Clone mailbox mass actions
-  $("div").find("[data-actions-header='true'").each(function() {
+  $("div").find("[data-actions-header='true']").each(function() {
     $(this).html($(this).nextAll('.mass-actions-mailbox:first').html());
   });
   // Auto-fill domain quota when adding new domain
@@ -1927,6 +1927,7 @@ jQuery(function($){
         type: "GET",
         url: "/api/v1/get/alias/all",
         dataSrc: function(json){
+          if (json && !Array.isArray(json) && Object.keys(json).length === 0) json = [];
           $.each(json, function (i, item) {
             item.action = '<div class="btn-group">' +
               '<a href="/edit/alias/' + encodeURIComponent(item.id) + '" class="btn btn-sm btn-xs-lg btn-xs-half btn-secondary"><i class="bi bi-pencil-fill"></i> ' + lang.edit + '</a>' +
@@ -2430,6 +2431,8 @@ jQuery(function($){
   }
 
   function filterByDomain(json, column, table){
+    // Empty native GET collections use {}, including a domain's first alias.
+    if (!Array.isArray(json)) json = [];
     var tableId = $(table.table().container()).attr('id');
     // Create the `select` element
     var select = $('<select class="btn btn-sm btn-xs-lg btn-light text-start mx-2"><option value="">'+lang.all_domains+'</option></select>')

@@ -1,0 +1,4 @@
+{% extends 'base.twig' %}
+{% block body_attributes %}class="plates-ui plates-guest"{% endblock %}
+{% block navbar %}{% endblock %}
+{% block content %}{% include 'components/login.twig' with {login_mode: 'domainadmin'} %}{% endblock %}

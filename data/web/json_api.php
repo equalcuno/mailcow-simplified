@@ -476,6 +476,19 @@ if (isset($_GET['query'])) {
       }
       if (isset($_SESSION['mailcow_cc_role'])) {
         switch ($category) {
+          case "overview":
+            if ($_SESSION['mailcow_cc_role'] !== 'admin' || !empty($_SESSION['pending_tfa_setup']) || !empty($_SESSION['pending_pw_update'])) {
+              http_response_code(403);
+              echo json_encode(['type' => 'error', 'msg' => 'Administrator access required']);
+              break;
+            }
+            try {
+              process_get_return(\Mailcow\Ui\OverviewStats::snapshot($redis, $pdo, $_SESSION['mailcow_cc_role'], time()));
+            } catch (\Throwable $e) {
+              http_response_code(503);
+              echo json_encode(['type' => 'error', 'msg' => 'Overview metrics are temporarily unavailable']);
+            }
+          break;
           case "rspamd":
             switch ($object) {
               case "actions":
@@ -1685,15 +1698,11 @@ if (isset($_GET['query'])) {
           ];
 
           if($_SESSION['mailcow_cc_role'] === 'admin') {
-            $data = SSP::complex($requestDecoded, $pdo, $table, $primaryKey, $columns, null,
-              "(`m`.`kind` = '' OR `m`.`kind` = NULL)");
+            $data = SSP::complex($requestDecoded, $pdo, $table, $primaryKey, $columns, null, \Mailcow\Mailbox\MailboxSearchScope::forCaller('admin', $_SESSION['mailcow_cc_username'], $requestDecoded['domain'] ?? null));
           } elseif ($_SESSION['mailcow_cc_role'] === 'domainadmin') {
             $data = SSP::complex($requestDecoded, $pdo, $table, $primaryKey, $columns,
               'INNER JOIN domain_admins as da ON da.domain = m.domain',
-              [
-                'condition' => "(`m`.`kind` = '' OR `m`.`kind` = NULL) AND `da`.`active` = 1 AND `da`.`username` = :username",
-                'bindings' => ['username' => $_SESSION['mailcow_cc_username']]
-              ]);
+              \Mailcow\Mailbox\MailboxSearchScope::forCaller('domainadmin', $_SESSION['mailcow_cc_username'], $requestDecoded['domain'] ?? null));
           } else {
             http_response_code(403);
             echo json_encode(array(

@@ -1,0 +1,26 @@
+.p-preferences { width: 100%; padding: 28px; border: 1px solid #dce1e6; border-radius: 12px; background: #fff; color: #17212b; font: 15px/1.5 sans-serif; }
+.p-preferences header, .p-preferences footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.p-pref-eyebrow { color: #5b6876; font-size: 12px; }
+.p-preferences h2 { margin: 0; font: 700 24px/1.4 sans-serif; color: inherit; }
+.p-preferences fieldset { padding: 0; margin: 24px 0; border: 0; }
+.p-preferences legend { font-size: 12px; color: #5b6876; margin-bottom: 8px; }
+.p-preferences label { display: flex; align-items: flex-start; gap: 12px; padding: 12px; border: 1px solid #dce1e6; border-radius: 8px; margin: 8px 0; cursor: pointer; }
+.p-preferences label:has(input:checked) { border-color: #1f4fd8; background: #e7edfc; }
+.p-preferences input { accent-color: #1f4fd8; margin-top: 4px; }
+.p-preferences strong, .p-preferences small { display: block; }
+.p-preferences small, .p-preferences footer span { color: #5b6876; font-size: 12px; }
+.p-preferences fieldset:disabled { opacity: .5; }
+html:has(#dark-mode-theme) .p-preferences { background: #1b2632; color: #edf1f5; border-color: #344251; }
+html:has(#dark-mode-theme) .p-preferences label:has(input:checked) { background: #25395e; }
+html:has(#dark-mode-theme) .p-preferences :is(small, legend, footer span, .p-pref-eyebrow) { color: #a9b4c0; }
+.p-branding-settings { border-top: 1px solid #dce1e6; margin-top: 28px; padding-top: 24px; }
+.p-branding-settings h3 { font: 700 18px/1.4 sans-serif; color: inherit; }
+.p-branding-settings > p { font-size: 12px; color: #5b6876; }
+.p-branding-settings .p-branding-form { margin: 20px 0; }
+.p-branding-settings .p-branding-form label { display: block; padding: 0; border: 0; background: none; font-size: 13px; }
+.p-branding-settings input { display: block; width: 100%; padding: 9px; border: 1px solid #dce1e6; border-radius: 6px; margin: 8px 0; font: inherit; color: inherit; background: transparent; }
+.p-favicon-preview { display: flex; gap: 12px; align-items: center; margin-top: 10px; font-size: 11px; font-weight: 400; }
+.p-favicon-preview img { width: 24px; height: 24px; object-fit: contain; }
+.p-ui-settings { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 48px; }
+.p-ui-settings .p-branding-settings { margin: 0; padding: 0 0 0 32px; border-top: 0; border-left: 1px solid #dce1e6; }
+@media (max-width: 800px) { .p-ui-settings { grid-template-columns: 1fr; gap: 28px; padding: 20px; } .p-ui-settings .p-branding-settings { border-left: 0; border-top: 1px solid #dce1e6; padding: 24px 0 0; } }

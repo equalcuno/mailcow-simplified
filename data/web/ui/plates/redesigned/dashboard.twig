@@ -1,0 +1,22 @@
+{% extends 'base.twig' %}
+{% block content %}
+<section class="p-overview" data-p-overview>
+  <header class="p-workspace-heading"><div><p class="p-kicker">{{ hostname }}</p><h1>{{ plates.text.overview }}</h1><p>{{ plates.text.overview_activity_hint }}</p></div><button class="btn btn-secondary p-button" type="button" data-p-overview-refresh><i class="bi bi-arrow-clockwise" aria-hidden="true"></i>{{ plates.text.refresh }}</button></header>
+  <p class="p-coverage" data-p-coverage aria-live="polite">{{ plates.text.loading }}</p>
+  <div class="p-metric-grid">
+    {% for key, title in {sent_messages: plates.text.messages_sent, received_messages: plates.text.messages_received, deferred_attempts: plates.text.deferred, rejected_attempts: plates.text.rejected} %}
+    <article class="p-metric"><span>{{ title }}</span><strong data-p-metric="{{ key }}">—</strong><small>{{ key in ['sent_messages', 'received_messages'] ? plates.text.distinct_messages : plates.text.delivery_attempts }}</small></article>
+    {% endfor %}
+  </div>
+  <div class="p-overview-grid">
+    <section class="p-insight p-activity"><header><div><h2>{{ plates.text.mail_activity }}</h2><p>{{ plates.text.activity_hint }}</p></div><div class="p-chart-key"><span>{{ plates.text.sent }}</span><span>{{ plates.text.received }}</span></div></header><div class="p-activity-chart" data-p-activity role="img" aria-label="{{ plates.text.mail_activity }}"></div><div class="p-activity-times" data-p-activity-times></div></section>
+    <section class="p-insight"><header><h2>{{ plates.text.inventory }}</h2></header><dl class="p-inventory"><div><dt>{{ lang.mailbox.domains }}</dt><dd data-p-inventory="domains">—</dd></div><div><dt>{{ lang.mailbox.mailboxes }}</dt><dd data-p-inventory="mailboxes">—</dd></div><div><dt>{{ plates.text.stored_messages }}</dt><dd data-p-inventory="stored_messages">—</dd></div><div><dt>{{ plates.text.storage_used }}</dt><dd data-p-inventory="used_bytes">—</dd></div><div><dt>{{ plates.text.outbound_deliveries }}</dt><dd data-p-metric="outbound_deliveries">—</dd></div><div><dt>{{ plates.text.bounced }}</dt><dd data-p-metric="bounced_deliveries">—</dd></div></dl></section>
+    <section class="p-insight"><header><div><h2>{{ plates.text.top_sending_domains }}</h2><p>{{ plates.text.sender_hint }}</p></div></header><ol class="p-domain-ranking" data-p-ranking="top_sending_domains"></ol></section>
+    <section class="p-insight"><header><div><h2>{{ plates.text.top_recipient_domains }}</h2><p>{{ plates.text.recipient_hint }}</p></div></header><ol class="p-domain-ranking" data-p-ranking="top_recipient_domains"></ol></section>
+    <section class="p-insight"><header><div><h2>{{ plates.text.top_local_domains }}</h2><p>{{ plates.text.local_hint }}</p></div></header><ol class="p-domain-ranking" data-p-ranking="top_local_domains"></ol></section>
+    <section class="p-insight"><header><h2>{{ plates.text.service_health }}</h2></header><ul class="p-services">{% for name, container in containers %}<li><span>{{ name }}</span><span class="p-status {{ container.State.Running ? 'p-status-active' : 'p-status-inactive' }}">{{ container.State.Running ? plates.text.running : plates.text.stopped }}</span></li>{% else %}<li>{{ plates.text.no_service_data }}</li>{% endfor %}</ul></section>
+  </div>
+  <p class="p-metric-footnote">{{ plates.text.metric_caveat }}</p>
+</section>
+<script type="application/json" id="p-overview-copy">{{ {coverage: plates.text.coverage, empty: plates.text.no_activity, error: plates.text.load_error, sent: plates.text.sent, received: plates.text.received}|json_encode(constant('JSON_HEX_TAG') b-or constant('JSON_HEX_AMP'))|raw }}</script>
+{% endblock %}

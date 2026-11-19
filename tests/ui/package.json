@@ -1,0 +1,17 @@
+{
+  "name": "mailcow-plates-ui-checks",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node assets.mjs && node dom.mjs && node components.mjs && node native.mjs && node browser.mjs",
+    "test:native": "node native.mjs",
+    "test:components": "node components.mjs",
+    "test:assets": "node assets.mjs",
+    "test:dom": "node dom.mjs",
+    "preview": "node preview.mjs"
+  },
+  "devDependencies": {
+    "puppeteer": "25.17.0",
+    "happy-dom": "21.0.4"
+  }
+}

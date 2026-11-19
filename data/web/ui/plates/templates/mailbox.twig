@@ -1,0 +1,33 @@
+{% extends '@upstream/mailbox.twig' %}
+
+{% block content %}
+<header class="plates-page-heading" data-plates-mail-heading>
+  <div>
+    <p class="plates-eyebrow">{{ plates.text.workspace }}</p>
+    <h1 data-plates-title>{{ lang.mailbox.domains }}</h1>
+    <p data-plates-description>{{ plates.text.domains_hint }}</p>
+  </div>
+</header>
+<div class="plates-mail-summary" aria-label="{{ plates.text.workspace }}">
+  <a href="#tab-domains" data-plates-tab="tab-domains"><span>{{ lang.mailbox.domains }}</span><strong data-plates-count="domains">{{ domains|length }}</strong><i class="bi bi-arrow-up-right" aria-hidden="true"></i></a>
+  <a href="#tab-mailboxes" data-plates-tab="tab-mailboxes"><span>{{ lang.mailbox.mailboxes }}</span><strong data-plates-count="mailboxes">{{ mailboxes|length }}</strong><i class="bi bi-arrow-up-right" aria-hidden="true"></i></a>
+  <div class="plates-summary-note"><i class="bi bi-envelope-open" aria-hidden="true"></i><p>{{ plates.text.workspace_hint }}</p></div>
+</div>
+<div class="plates-domain-filter" data-plates-domain-filter hidden>
+  <label for="plates-domain">{{ plates.text.domain_filter }}</label>
+  <select class="form-select" id="plates-domain" data-plates-domain>
+    <option value="">{{ plates.text.all_domains }}</option>
+    {% for domain in domains %}<option value="{{ domain }}">{{ domain }}</option>{% endfor %}
+  </select>
+  <button type="button" class="btn btn-secondary" data-plates-clear-domain>{{ plates.text.clear_filter }}</button>
+</div>
+{{ parent() }}
+<script type="application/json" id="plates-mail-copy">{{ {
+  'domains': plates.text.domains_hint,
+  'mailboxes': plates.text.mailboxes_hint,
+  'aliases': plates.text.aliases_hint,
+  'tools': plates.text.tools_hint,
+  'more': plates.text.tools,
+  'templates': plates.text.templates
+}|json_encode(constant('JSON_HEX_TAG') b-or constant('JSON_HEX_AMP') b-or constant('JSON_HEX_APOS') b-or constant('JSON_HEX_QUOT'))|raw }}</script>
+{% endblock %}

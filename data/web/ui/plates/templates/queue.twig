@@ -1,0 +1,5 @@
+{% extends '@upstream/queue.twig' %}
+{% block content %}
+{% include 'plates/page-heading.twig' with {title: lang.queue.queue_manager, hint: plates.text.queue_hint} %}
+{{ parent() }}
+{% endblock %}

@@ -53,6 +53,82 @@ security:
   - ApiKeyAuth: []
 
 paths:
+  /api/v1/get/overview:
+    get:
+      tags: [Status]
+      summary: Read instance mail activity and inventory
+      description: >-
+        Administrator-only. Aggregates up to 20000 retained Postfix log entries,
+        filtered to the preceding 24 hours. Retention can cover less than a day;
+        coverage is reported explicitly. Message counts are distinct queue IDs
+        with successful SMTP or LMTP recipient deliveries. Delivery and failure
+        counts are recipient attempts; local delivery can include internal mail.
+        Sending-domain rankings require a retained sender record. Inventory is
+        read from the current domain, mailbox and quota tables.
+      responses:
+        "200":
+          description: Observed activity, hourly recipient deliveries, top domains and current inventory
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [generated_at, counts, coverage, hourly, inventory, top_sending_domains, top_recipient_domains, top_local_domains]
+                properties:
+                  generated_at:
+                    type: integer
+                    description: Snapshot time, Unix seconds
+                  counts:
+                    type: object
+                    properties:
+                      sent_messages: {type: integer}
+                      received_messages: {type: integer}
+                      outbound_deliveries: {type: integer}
+                      inbound_deliveries: {type: integer}
+                      deferred_attempts: {type: integer}
+                      bounced_deliveries: {type: integer}
+                      rejected_attempts: {type: integer}
+                  coverage:
+                    type: object
+                    properties:
+                      requested_since: {type: integer}
+                      oldest_retained: {type: [integer, "null"]}
+                      newest_retained: {type: [integer, "null"]}
+                      scanned_lines: {type: integer}
+                      scan_limit: {type: integer}
+                      capped: {type: boolean}
+                      source: {type: string}
+                      message_definition: {type: string}
+                  hourly:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        time: {type: integer}
+                        sent: {type: integer}
+                        received: {type: integer}
+                  inventory:
+                    type: object
+                    properties:
+                      domains: {type: integer}
+                      active_domains: {type: integer}
+                      mailboxes: {type: integer}
+                      active_mailboxes: {type: integer}
+                      allocated_bytes: {type: integer}
+                      used_bytes: {type: integer}
+                      stored_messages: {type: integer}
+                  top_sending_domains:
+                    type: array
+                    items: {type: object, properties: {domain: {type: string}, deliveries: {type: integer}}}
+                  top_recipient_domains:
+                    type: array
+                    items: {type: object, properties: {domain: {type: string}, deliveries: {type: integer}}}
+                  top_local_domains:
+                    type: array
+                    items: {type: object, properties: {domain: {type: string}, deliveries: {type: integer}}}
+        "403":
+          description: Administrator access required
+        "503":
+          description: Metrics source temporarily unavailable
   /api/v1/add/alias:
     post:
       responses:

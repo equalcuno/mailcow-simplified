@@ -1,0 +1,12 @@
+{% extends '@upstream/edit.twig' %}
+
+{% block content %}
+<header class="plates-page-heading">
+  <div>
+    <p class="plates-eyebrow">{{ plates.text.workspace }}</p>
+    <h1>{{ lang.edit.title }}{% if mailbox %}<span class="plates-heading-detail">{{ mailbox }}</span>{% elseif domain %}<span class="plates-heading-detail">{{ domain }}</span>{% endif %}</h1>
+    <p>{{ plates.text.edit_hint }}</p>
+  </div>
+</header>
+<div class="plates-edit-page">{{ parent() }}</div>
+{% endblock %}
