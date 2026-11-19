@@ -6,6 +6,7 @@ cold archives of files, named volumes and old images. Traffic stays blocked unti
 health checks pass. After the commit point, cleanup never restores stale mail data.
 """
 import argparse
+import codecs
 import contextlib
 import fcntl
 import hashlib
@@ -15,6 +16,7 @@ from pathlib import Path
 import platform
 import re
 import secrets
+import selectors
 import shutil
 import signal
 import subprocess
@@ -67,6 +69,24 @@ def sha256(path):
     return checksum.hexdigest()
 
 
+def redact_output(value, secrets_to_hide=()):
+    value = str(value)
+    for secret in sorted(set(secrets_to_hide), key=len, reverse=True):
+        if len(secret) >= 4: value = value.replace(secret, '[REDACTED]')
+    # Git may include an authenticated remote URL in diagnostics.
+    return re.sub(r'(https?://)[^/\s@]+@', r'\1[REDACTED]@', value, flags=re.I)
+
+
+def log(message):
+    print(time.strftime('[%Y-%m-%d %H:%M:%S UTC]', time.gmtime()) + ' ' + str(message), flush=True)
+
+
+def secret_values(environment):
+    return tuple(value for key, value in (environment or {}).items()
+                 if isinstance(value, str) and len(value) >= 4
+                 and re.search(r'PASS|SECRET|TOKEN|(?:^|_)KEY(?:_|$)', key, re.I))
+
+
 def recovery_signals(operation):
     def protected(*args, **kwargs):
         previous = {sig: signal.getsignal(sig) for sig in (signal.SIGINT, signal.SIGTERM)}
@@ -78,11 +98,53 @@ def recovery_signals(operation):
     return protected
 
 
-def execute(arguments, cwd=None, env=None, timeout=3600, allow_failure=False):
-    result = subprocess.run(arguments, cwd=cwd, env=env, text=True, capture_output=True, timeout=timeout)
+def execute(arguments, cwd=None, env=None, timeout=3600, allow_failure=False, stream=False, redact=(), progress_label=None):
+    command = str(arguments[0]) + (' ' + str(arguments[1]) if arguments[0] == 'git' and len(arguments) > 1 else '')
+    hidden = (*secret_values(env), *redact)
+    if not stream:
+        result = subprocess.run(arguments, cwd=cwd, env=env, text=True, capture_output=True, timeout=timeout)
+    else:
+        # Queries stay captured for JSON/numeric parsers. Only human-readable
+        # operations opt in here; archive bytes always go to their output file.
+        started, heartbeat = time.monotonic(), time.monotonic()
+        tail, pending = '', ''
+        decoder = codecs.getincrementaldecoder('utf-8')(errors='replace')
+        process = subprocess.Popen(arguments, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        try:
+            with selectors.DefaultSelector() as selector:
+                selector.register(process.stdout, selectors.EVENT_READ)
+                while selector.get_map():
+                    now = time.monotonic()
+                    if now - started >= timeout:
+                        raise UpgradeError(f'{command} timed out after {timeout}s.')
+                    if now - heartbeat >= 15:
+                        log(f'{progress_label or command}: still working ({int(now - started)}s elapsed).')
+                        heartbeat = now
+                    for key, _ in selector.select(min(1, max(0, timeout - (now - started)))):
+                        data = os.read(key.fd, 8192)
+                        chunk = decoder.decode(data, final=not data)
+                        tail = (tail + chunk)[-65536:]
+                        pending += chunk
+                        # Git and Docker use carriage returns for progress on pipes.
+                        lines = re.split(r'[\r\n]', pending)
+                        pending = lines.pop()
+                        for line in lines:
+                            if line: log(redact_output(line, hidden))
+                        if not data: selector.unregister(key.fileobj)
+                if pending: log(redact_output(pending, hidden))
+                remaining = max(0.01, timeout - (time.monotonic() - started))
+                try: code = process.wait(timeout=remaining)
+                except subprocess.TimeoutExpired: raise UpgradeError(f'{command} timed out after {timeout}s.') from None
+                result = subprocess.CompletedProcess(arguments, code, redact_output(tail, hidden), '')
+        except BaseException:
+            if process.poll() is None: process.kill()
+            process.wait()
+            raise
+        finally:
+            process.stdout.close()
     if result.returncode and not allow_failure:
-        command = arguments[0] + (' ' + arguments[1] if arguments[0] == 'git' and len(arguments) > 1 else '')
-        raise UpgradeError(f'{command} exited {result.returncode}: {result.stderr[-2000:].strip() or "no error details returned"}')
+        detail = (result.stdout if stream else result.stderr)[-2000:].strip() or 'no error details returned'
+        raise UpgradeError(f'{command} exited {result.returncode}: {redact_output(detail, hidden)}')
     return result
 
 
@@ -132,9 +194,18 @@ class Engine:
         self.env = dict(os.environ, GIT_TERMINAL_PROMPT='0')
         self.job = None
 
-    def command(self, *arguments, **kwargs):
+    def log(self, message):
+        log(redact_output(message, secret_values(self.env)))
+
+    def command(self, *arguments, progress=None, **kwargs):
         kwargs.setdefault('timeout', int(self.config.get('command_timeout', 3600)))
-        return self.run(list(arguments), cwd=kwargs.pop('cwd', self.root), env=self.env, **kwargs).stdout.strip()
+        if progress:
+            self.log(progress + '…')
+            kwargs.update(stream=True, progress_label=progress)
+        started = time.monotonic()
+        result = self.run(list(arguments), cwd=kwargs.pop('cwd', self.root), env=self.env, **kwargs)
+        if progress: self.log(f'{progress}: done ({time.monotonic() - started:.1f}s).')
+        return result.stdout.strip()
 
     def ensure_recovery_service(self, source):
         if not Path('/run/systemd/system').is_dir():
@@ -150,7 +221,8 @@ class Engine:
             atomic_json(path, config)
         # Refresh the installed engine as part of every full release, without
         # interrupting a daemon that is currently executing this transaction.
-        self.command('bash', str(source / 'helper-scripts/install-upgrade-worker.sh'), '--target', str(self.root), '--no-start')
+        self.command('bash', str(source / 'helper-scripts/install-upgrade-worker.sh'), '--target', str(self.root), '--no-start',
+                     progress='Installing the host recovery service')
 
     def load_environment(self):
         result = self.run(['bash', '-c', 'set -a; source "$1"; env -0', 'mailcow-config', str(self.root / 'mailcow.conf')])
@@ -175,6 +247,7 @@ class Engine:
         return json.loads(self.command('docker', 'inspect', *ids)) if ids else []
 
     def preflight(self, readonly=False):
+        self.log('Checking host requirements, Docker, Git status and backup locations…')
         if platform.system() != 'Linux' or os.geteuid() != 0: raise UpgradeError('Full upgrades require root on the Linux mailcow host.')
         if not (self.root / 'mailcow.conf').is_file(): raise UpgradeError('Existing mailcow.conf is required; never regenerate it for an upgrade.')
         if self.root == self.backups or self.root in self.backups.parents: raise UpgradeError('Full backups must be outside the installation directory.')
@@ -186,6 +259,7 @@ class Engine:
         if not self.env.get('DOCKER_HOST', context).startswith('unix://'): raise UpgradeError('A local Docker Engine is required for consistent file and volume backups.')
         version = re.search(r'(\d+)\.(\d+)\.(\d+)', self.command('docker', 'compose', 'version', '--short'))
         if not version or tuple(map(int, version.groups())) < (2, 24, 4): raise UpgradeError('Docker Compose 2.24.4 or newer is required.')
+        self.log('Docker Compose ' + version.group(0) + '; project ' + self.project + '.')
         if '-j DOCKER-USER' not in self.command('iptables', '-S', 'FORWARD'):
             raise UpgradeError("The updater requires Docker's iptables DOCKER-USER hook; nftables-only backends need manual upgrades.")
         if self.command('git', 'status', '--porcelain', '--untracked-files=no'):
@@ -210,7 +284,7 @@ class Engine:
     def phase(self, phase, message):
         self.job.update(phase=phase, message=message, updated_at=int(time.time()))
         atomic_json(self.journal, self.job)
-        print(f'{phase}: {message}', flush=True)
+        self.log(f'{phase}: {message}')
         if self.notify:
             with contextlib.suppress(Exception): self.notify(self.public_status())
 
@@ -393,7 +467,16 @@ class Engine:
         self.job['backup_complete'] = True
         atomic_json(self.journal, self.job)
 
-    def stop_all(self):
+    # Services whose on-disk state is archived by the cold backup. A SIGKILL here
+    # can leave torn writes, so the backup must not proceed. Other services
+    # (watchdog, acme, ofelia, unbound, netfilter, …) hold no archived state and
+    # commonly ignore SIGTERM as PID 1; stock mailcow simply kills them.
+    STATEFUL_SERVICES = frozenset({'mysql-mailcow', 'redis-mailcow', 'dovecot-mailcow', 'postfix-mailcow',
+                                   'rspamd-mailcow', 'clamd-mailcow', 'sogo-mailcow', 'roundcube-mailcow'})
+
+    def stop_all(self, strict=True):
+        """Stop the project. strict=False is for recovery, where data is either
+        untouched (old containers restart as-is) or replaced from the verified backup."""
         running = self.inspect_project(running=True)
         # Stop producers/supervisors before stores so accepted messages finish or remain queued.
         order = {'watchdog-mailcow': 0, 'ofelia-mailcow': 0, 'nginx-mailcow': 1,
@@ -401,10 +484,21 @@ class Engine:
                  'dovecot-mailcow': 4, 'php-fpm-mailcow': 5, 'mysql-mailcow': 8, 'redis-mailcow': 9}
         running.sort(key=lambda c: order.get(c['Config']['Labels']['com.docker.compose.service'], 6))
         for container in running:
-            self.command('docker', 'stop', '--time', '300', container['Id'])
+            service = container['Config']['Labels']['com.docker.compose.service']
+            stateful = service in self.STATEFUL_SERVICES
+            grace = '300' if stateful else str(int(self.config.get('stateless_stop_timeout', 30)))
+            self.command('docker', 'stop', '--time', grace, container['Id'])
             state = json.loads(self.command('docker', 'inspect', '--format', '{{json .State}}', container['Id']))
-            if state.get('ExitCode') == 137 or state.get('OOMKilled'):
-                raise UpgradeError('A service could not stop cleanly; restart the unchanged stack before retrying.')
+            if state.get('Running'):
+                raise UpgradeError(f'{service} is still running after docker stop.')
+            killed = state.get('ExitCode') == 137 or state.get('OOMKilled')
+            if not killed: continue
+            reason = 'was OOM-killed' if state.get('OOMKilled') else f'did not exit within {grace}s and was killed (exit 137)'
+            if stateful and strict:
+                raise UpgradeError(f'{service} {reason}; its data may be inconsistent. '
+                                   'Restart the unchanged stack and inspect that service before retrying.')
+            self.log(f'Warning: {service} {reason}; continuing because '
+                     + ('recovery restarts or restores it from the verified backup.' if stateful else 'it holds no archived state.'))
 
     def health(self, expected):
         deadline = time.monotonic() + int(self.config.get('health_timeout', 240))
@@ -451,7 +545,7 @@ class Engine:
         if self.job.get('committed'):
             firewall.release(); self.phase('complete', 'Update completed; traffic guard cleanup recovered.'); return
         self.phase('restoring', 'Recovering the previous stack while mail access remains paused.')
-        self.stop_all()
+        self.stop_all(strict=False)
         if self.job.get('applied'):
             self.verify_backup()
             backup = Path(self.job['backup'])

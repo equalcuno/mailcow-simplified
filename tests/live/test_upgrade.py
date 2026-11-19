@@ -97,7 +97,7 @@ class FixtureEngine(worker.Engine):
     def assert_guarded(self):
         if not Guard.active: raise AssertionError('Application started without the traffic guard')
 
-    def stop_all(self): self.operations.append(['stop-all']); self.assert_guarded()
+    def stop_all(self, strict=True): self.operations.append(['stop-all']); self.assert_guarded()
 
     def volume_tool(self, name, script, *arguments, readonly=True):
         if script.startswith('du'): return str(self.volume.stat().st_size)
@@ -352,6 +352,35 @@ class TransactionTests(unittest.TestCase):
         self.assertEqual(recovered.job['phase'], 'rolled_back')
         self.assertEqual(self.volume.read_text(), 'old mail')
         self.assertIn('WEBMAIL_CLIENT=sogo', (self.target / 'mailcow.conf').read_text())
+
+
+class StopTests(unittest.TestCase):
+    """Exercise the real Engine.stop_all against scripted docker stop results."""
+    class Stopper(worker.Engine):
+        def __init__(self, exits):
+            super().__init__({'target': tempfile.gettempdir()})
+            self.exits, self.stopped, self.messages = exits, [], []
+        def inspect_project(self, running=False):
+            return [{'Id': name, 'Config': {'Labels': {'com.docker.compose.service': name}}} for name in self.exits]
+        def command(self, *arguments, **kwargs):
+            if arguments[1] == 'stop': self.stopped.append((arguments[-1], arguments[3])); return ''
+            return json.dumps({'Running': False, 'ExitCode': self.exits[arguments[-1]], 'OOMKilled': False})
+        def log(self, message): self.messages.append(message)
+
+    def test_killed_stateless_helper_does_not_abort_and_gets_short_grace(self):
+        engine = self.Stopper({'acme-mailcow': 137, 'mysql-mailcow': 0})
+        engine.stop_all()
+        self.assertEqual(dict(engine.stopped), {'acme-mailcow': '30', 'mysql-mailcow': '300'})
+        self.assertIn('acme-mailcow', engine.messages[0])
+
+    def test_killed_data_store_aborts_backup_naming_the_service(self):
+        with self.assertRaisesRegex(worker.UpgradeError, 'dovecot-mailcow'):
+            self.Stopper({'dovecot-mailcow': 137}).stop_all()
+
+    def test_recovery_tolerates_killed_data_store(self):
+        engine = self.Stopper({'dovecot-mailcow': 137, 'redis-mailcow': 0})
+        engine.stop_all(strict=False)
+        self.assertEqual(len(engine.stopped), 2)
 
 
 class FirewallTests(unittest.TestCase):
