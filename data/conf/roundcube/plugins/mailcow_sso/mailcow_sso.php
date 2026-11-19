@@ -42,7 +42,8 @@ class mailcow_sso extends rcube_plugin {
         }
         $args['user'] = $_SERVER['PHP_AUTH_USER'];
         $args['pass'] = $_SERVER['PHP_AUTH_PW'];
-        $args['host'] = 'dovecot-mailcow';
+        // Use the configured IPv4 endpoint; Dovecot trusts this login only from .248.
+        $args['host'] = rcmail::get_instance()->config->get('imap_host', 'dovecot-mailcow:143');
         $args['cookiecheck'] = false;
         $args['valid'] = true;
         return $args;

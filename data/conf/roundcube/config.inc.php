@@ -17,15 +17,23 @@ $config['enable_installer'] = false;
 $config['enable_spellcheck'] = false;
 $config['login_autocomplete'] = 0;
 $config['log_logins'] = true;
-$config['imap_host'] = 'dovecot-mailcow:143';
-$config['smtp_host'] = 'postfix-mailcow:588';
+// Dovecot accepts the SSO password and plaintext auth only from the .248 IPv4
+// address; a service name may resolve to IPv6 and be rejected.
+$address = static function ($variable, $fallback) {
+    $value = getenv($variable);
+    return is_string($value) && filter_var($value, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) ? $value : $fallback;
+};
+$dovecot = $address('MAILCOW_DOVECOT_ADDR', 'dovecot-mailcow');
+$postfix = $address('MAILCOW_POSTFIX_ADDR', 'postfix-mailcow');
+$config['imap_host'] = $dovecot.':143';
+$config['smtp_host'] = $postfix.':588';
 $config['smtp_user'] = '%u';
 $config['smtp_pass'] = '%p';
 $config['imap_auth_type'] = 'PLAIN';
 $config['smtp_auth_type'] = 'PLAIN';
 // Only the dedicated webmail container uses Dovecot's existing trusted .248 address.
 // Do not disable certificate verification or relax authentication for the whole subnet.
-$config['managesieve_host'] = 'dovecot-mailcow:4190';
+$config['managesieve_host'] = $dovecot.':4190';
 $config['managesieve_auth_type'] = 'PLAIN';
 $config['managesieve_script_name'] = 'roundcube';
 $config['managesieve_vacation'] = 1;

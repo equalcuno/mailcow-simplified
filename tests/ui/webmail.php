@@ -51,13 +51,15 @@ foreach ([[], array_fill(0, 51, $row), [$row, $row], [array_merge($row, ['passwo
 // Roundcube plugin test doubles: no real mail services or credentials.
 class rcube_plugin { public function add_hook(...$args) {} }
 class FakeSession { public function remove($key) { unset($_SESSION[$key]); } }
+class FakeConfig { public function get($key, $default = null) { return $key === 'imap_host' ? '172.22.1.250:143' : $default; } }
 class rcmail {
     public static $instance;
     public $session;
+    public $config;
     public $shutdown = [];
     public $killed = 0;
     public static function get_instance() { return self::$instance ??= new self(); }
-    public function __construct() { $this->session = new FakeSession(); }
+    public function __construct() { $this->session = new FakeSession(); $this->config = new FakeConfig(); }
     public function kill_session() { $_SESSION = []; $this->killed++; }
     public function encrypt($value) { return 'encrypted:'.$value; }
     public function add_shutdown_function($fn) { $this->shutdown[] = $fn; }
@@ -69,7 +71,7 @@ $_SERVER['PHP_AUTH_PW'] = 'internal-fixture-credential';
 $_SESSION = [];
 verify($plugin->startup([])['action'] === 'login', 'Portal credentials initiate Roundcube login');
 $auth = $plugin->authenticate(['user' => 'attacker@example.org', 'pass' => 'injected', 'host' => 'attacker.invalid']);
-verify($auth['user'] === 'alex@example.org' && $auth['host'] === 'dovecot-mailcow', 'SSO overwrites user-controlled credentials and host');
+verify($auth['user'] === 'alex@example.org' && $auth['host'] === '172.22.1.250:143', 'SSO overwrites user-controlled credentials and uses the configured IPv4 IMAP host');
 $_SESSION = ['user_id' => 1, 'username' => 'other@example.org', 'password' => 'old'];
 $plugin->startup([]);
 verify(rcmail::get_instance()->killed === 1 && empty($_SESSION['user_id']), 'Switching accounts kills the prior inbox session');

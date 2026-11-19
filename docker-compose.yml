@@ -281,6 +281,10 @@ services:
         - ROUNDCUBEMAIL_REQUEST_PATH=/webmail/
         - ROUNDCUBEMAIL_UPLOAD_MAX_FILESIZE=100M
         - ROUNDCUBE_DES_KEY=${ROUNDCUBE_DES_KEY:-}
+        # Dovecot trusts SSO and plaintext IMAP only from .248 over IPv4. Service names
+        # resolve to IPv6 first when it is enabled, so connect to the fixed IPv4 addresses.
+        - MAILCOW_DOVECOT_ADDR=${IPV4_NETWORK:-172.22.1}.250
+        - MAILCOW_POSTFIX_ADDR=${IPV4_NETWORK:-172.22.1}.253
       volumes:
         - ./data/conf/roundcube/healthcheck.php:/var/www/html/healthcheck.php:ro,Z
         - ./data/conf/roundcube/custom:/var/roundcube/config/custom:ro,Z
