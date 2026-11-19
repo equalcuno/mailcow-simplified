@@ -46,6 +46,7 @@ class FixtureEngine(worker.Engine):
 
     def preflight(self, readonly=False):
         self.load_environment()
+        self.check_local_changes()
         self.backups.mkdir(exist_ok=True)
         self.state.mkdir(exist_ok=True)
 
@@ -247,6 +248,38 @@ class TransactionTests(unittest.TestCase):
             self.assertIn(b'old stock updater', archive.extractfile('./upgrade.sh').read())
         # Preserved configuration remains eligible for subsequent releases.
         engine.upgrade(self.source, check=True)
+
+    def postfix_runtime_tail(self):
+        main = self.target / 'data/conf/postfix/main.cf'
+        committed = 'relayhost = private.example\n# DO NOT EDIT ANYTHING BELOW #\n# Overrides #\n'
+        main.write_text(committed)
+        git(self.target, 'commit', '-qam', 'Instance postfix configuration')
+        # What postfix.sh appends on every container start.
+        main.write_text(committed + '\npostscreen_dnsbl_sites = example\n\n# User Overrides\n')
+        return main, committed
+
+    def test_postfix_generated_tail_does_not_block_upgrade(self):
+        main, committed = self.postfix_runtime_tail()
+        engine = self.engine(); engine.upgrade(self.source)
+        self.assertEqual(engine.job['phase'], 'complete')
+        self.assertEqual(main.read_text(), committed)
+        self.assertEqual(git(self.target, 'status', '--porcelain', '--untracked-files=no'), '')
+
+    def test_postfix_edit_above_marker_is_rejected_by_name(self):
+        main, committed = self.postfix_runtime_tail()
+        main.write_text(committed.replace('private', 'edited'))
+        engine = self.engine()
+        with self.assertRaisesRegex(worker.UpgradeError, 'local changes: data/conf/postfix/main.cf'):
+            engine.upgrade(self.source)
+        self.assertIsNone(engine.job)
+
+    def test_rollback_restores_postfix_generated_tail_exactly(self):
+        main, _ = self.postfix_runtime_tail()
+        before = main.read_text()
+        engine = self.engine('start')
+        with self.assertRaises(worker.UpgradeError): engine.upgrade(self.source)
+        self.assertEqual(engine.job['phase'], 'rolled_back')
+        self.assertEqual(main.read_text(), before)
 
     def test_legacy_ui_failure_restores_untracked_files_and_local_configuration(self):
         template, asset = self.legacy_installation()

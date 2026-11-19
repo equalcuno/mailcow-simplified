@@ -35,6 +35,7 @@ LEGACY_UI_FILES = {
 }
 LEGACY_UI_DIRS = ('data/web/ui/plates/', 'data/web/inc/lib/mailcow/Ui/')
 INSTANCE_FILES = {'data/conf/postfix/main.cf', 'data/assets/ssl-example/cert.pem', 'data/assets/ssl-example/key.pem'}
+GENERATED_MARKERS = {'data/conf/postfix/main.cf': '# Overrides #'}
 
 
 class UpgradeError(RuntimeError):
@@ -262,8 +263,7 @@ class Engine:
         self.log('Docker Compose ' + version.group(0) + '; project ' + self.project + '.')
         if '-j DOCKER-USER' not in self.command('iptables', '-S', 'FORWARD'):
             raise UpgradeError("The updater requires Docker's iptables DOCKER-USER hook; nftables-only backends need manual upgrades.")
-        if self.command('git', 'status', '--porcelain', '--untracked-files=no'):
-            raise UpgradeError('Tracked files contain local changes. Commit/review them before upgrading.')
+        self.check_local_changes()
         for name in ('mailcow.conf', 'docker-compose.yml', 'docker-compose.override.yml'):
             path = self.root / name
             if path.exists() and (path.stat().st_uid != 0 or path.stat().st_mode & 0o022):
@@ -280,6 +280,30 @@ class Engine:
         if self.journal.exists():
             pending = json.loads(self.journal.read_text())
             if pending['phase'] not in TERMINAL: raise UpgradeError('An incomplete upgrade needs recovery before another upgrade.')
+
+    def check_local_changes(self):
+        changed = list(filter(None, self.command('git', 'diff', 'HEAD', '--name-only', '-z').split('\0')))
+        self.regenerated = [name for name in changed if self.only_generated_changes(name)]
+        dirty = [name for name in changed if name not in self.regenerated]
+        if dirty:
+            raise UpgradeError('Tracked files contain local changes: ' + ', '.join(dirty[:12])
+                               + '. Commit/review them before upgrading (see git diff).')
+        if self.regenerated:
+            self.log('Ignoring runtime-generated sections in: ' + ', '.join(self.regenerated) + '.')
+
+    def only_generated_changes(self, name):
+        # The postfix container truncates main.cf after this marker on every start and
+        # appends DNSBL and extra.cf settings. Operator edits belong in extra.cf.
+        marker = GENERATED_MARKERS.get(name)
+        path = self.root / name
+        if not marker or not path.is_file() or path.is_symlink(): return False
+        result = self.run(['git', 'show', 'HEAD:' + name], cwd=self.root, env=self.env, allow_failure=True)
+        if result.returncode: return False
+        def head(text):
+            index = text.find(marker)
+            return text[:index + len(marker)] if index >= 0 else None
+        committed = head(result.stdout)
+        return committed is not None and head(path.read_text(errors='surrogateescape')) == committed
 
     def phase(self, phase, message):
         self.job.update(phase=phase, message=message, updated_at=int(time.time()))
@@ -642,10 +666,16 @@ class Engine:
             self.job['applied'] = True; atomic_json(self.journal, self.job)
             self.command('git', 'fetch', str(source), commit)
             for name in replace: (self.root / name).unlink()  # Already retained in the verified cold archive.
+            # Services are stopped; their runtime-generated tails are rebuilt on start.
+            regenerated = getattr(self, 'regenerated', [])
+            if regenerated: self.command('git', 'checkout', '--', *regenerated)
             self.command('git', 'checkout', '--no-overwrite-ignore', '--detach', commit)
             if preserve:
                 self.command('tar', '--xattrs', '--acls', '--numeric-owner', '-xpf', str(backup / 'files.tar'), '-C', str(self.root),
                              *('./' + name for name in preserve))
+                # Keep the committed instance configuration, not its generated runtime tail.
+                stale = [name for name in preserve if name in regenerated]
+                if stale: self.command('git', 'checkout', self.job['old_commit'], '--', *stale)
                 self.command('git', '-c', 'user.name=Mailcow instance', '-c', 'user.email=instance@localhost',
                              '-c', 'commit.gpgsign=false', '-c', 'core.hooksPath=/dev/null', 'commit', '--quiet', '--only',
                              '-m', 'Preserve instance configuration over fork ' + commit[:12], '--', *preserve)
