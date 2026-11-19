@@ -72,7 +72,9 @@ class FixtureEngine(worker.Engine):
                         return None if any(part in ('.git', '.update-ui.lock') for part in Path(info.name).parts) else info
                     archive.add(self.root, arcname='.', filter=retain)
             else:
-                with tarfile.open(arguments[arguments.index('-xpf')+1]) as archive: archive.extractall(self.root)
+                with tarfile.open(arguments[arguments.index('-xpf')+1]) as archive:
+                    selected = arguments[arguments.index('-C')+2:]
+                    archive.extractall(self.root, members=[archive.getmember(name) for name in selected] if selected else None)
         elif arguments[:3] == ['docker', 'image', 'inspect']: output = '[{"Size":1}]'
         elif arguments[:2] == ['docker', 'info']: output = 'fixture-daemon' if '{{.ID}}' in arguments else str(self.root)
         elif arguments[:3] == ['docker', 'image', 'save']:
@@ -132,6 +134,10 @@ class TransactionTests(unittest.TestCase):
                   'networks': {'mailcow-network': {'ipam': {'config': [{'subnet': '172.22.1.0/24'}]}}}}
         (self.source / 'docker-compose.yml').write_text(json.dumps(config))
         (self.source / 'application.txt').write_text('old code')
+        (self.source / 'data/conf/postfix').mkdir(parents=True)
+        (self.source / 'data/conf/postfix/main.cf').write_text('relayhost =\n')
+        (self.source / 'data/web/templates').mkdir(parents=True)
+        (self.source / 'data/web/templates/base.twig').write_bytes(b'header\nbody\nfooter\n')
         (self.source / '.gitignore').write_text('mailcow.conf\n.update-ui.lock\n')
         git(self.source, 'init', '-q', '-b', 'master')
         git(self.source, 'config', 'user.name', 'Upgrade fixtures')
@@ -143,6 +149,8 @@ class TransactionTests(unittest.TestCase):
         git(self.source, 'commit', '-qam', 'new release')
         self.target = self.folder / 'instance'
         subprocess.run(['git', 'clone', '-q', str(self.source), str(self.target)], check=True)
+        git(self.target, 'config', 'user.name', 'Upgrade fixtures')
+        git(self.target, 'config', 'user.email', 'fixture@example.invalid')
         git(self.target, 'reset', '--hard', self.old)
         (self.target / 'mailcow.conf').write_text('COMPOSE_PROJECT_NAME=fixture\nWEBMAIL_CLIENT=sogo\nSKIP_SOGO=n\nCOMPOSE_PROFILES=sogo\nROUNDCUBE_DES_KEY=abcdefghijklmnopqrstuvwx\n')
         self.volume = self.folder / 'mail'
@@ -194,6 +202,110 @@ class TransactionTests(unittest.TestCase):
         with self.assertRaises(worker.UpgradeError): engine.upgrade(self.source)
         self.assertEqual(engine.job['phase'], 'failed')
         self.assertEqual(self.volume.read_text(), 'old mail')
+        self.assertFalse(Guard.events)
+
+    def test_diverged_application_changes_fail_with_actionable_error_before_maintenance(self):
+        (self.target / 'application.txt').write_text('custom code')
+        git(self.target, 'commit', '-qam', 'Local changes')
+        engine = self.engine()
+        with self.assertRaisesRegex(worker.UpgradeError, 'Unreviewed local/newer-upstream changes: application.txt'):
+            engine.upgrade(self.source)
+        self.assertFalse(Guard.events)
+        self.assertEqual((self.target / 'application.txt').read_text(), 'custom code')
+
+    def legacy_installation(self):
+        template = 'data/web/templates/base.twig'
+        asset = 'data/web/ui/plates/assets/fixture.woff2'
+        (self.source / template).write_bytes(b'ui header\nbody\nfooter\n')
+        (self.source / asset).parent.mkdir(parents=True)
+        (self.source / asset).write_bytes(bytes(range(256)))
+        (self.source / 'upgrade.sh').write_text('#!/bin/bash\necho new upgrader\n')
+        git(self.source, 'add', '.'); git(self.source, 'commit', '-qm', 'Legacy UI package')
+        previous = git(self.source, 'rev-parse', 'HEAD')
+        files = {name: worker.sha256(self.source / name) for name in (template, asset)}
+        (self.target / template).write_bytes((self.source / template).read_bytes())
+        (self.target / 'data/conf/postfix/main.cf').write_text('relayhost = private.example\n')
+        git(self.target, 'add', '.'); git(self.target, 'commit', '-qm', 'Before update on fixture')
+        (self.target / asset).parent.mkdir(parents=True)
+        (self.target / asset).write_bytes((self.source / asset).read_bytes())
+        (self.target / 'upgrade.sh').write_text('#!/bin/bash\necho old stock updater\n')
+        (self.target / '.plates-ui-state.json').write_text(json.dumps({'version': 1, 'commit': previous, 'files': files}))
+        (self.source / template).write_bytes(b'new ui header\nbody\nfooter\n')
+        git(self.source, 'commit', '-qam', 'Current UI package')
+        return template, asset
+
+    def test_legacy_ui_and_stock_update_commits_are_adopted_with_instance_configuration(self):
+        template, asset = self.legacy_installation()
+        engine = self.engine(); engine.upgrade(self.source)
+        self.assertEqual(engine.job['phase'], 'complete')
+        self.assertEqual((self.target / template).read_bytes(), (self.source / template).read_bytes())
+        self.assertEqual((self.target / 'data/conf/postfix/main.cf').read_text(), 'relayhost = private.example\n')
+        self.assertIn(asset, git(self.target, 'ls-files'))
+        self.assertEqual(git(self.target, 'status', '--porcelain', '--untracked-files=no'), '')
+        self.assertNotEqual(engine.job['commit'], engine.job['deployed_commit'])
+        with tarfile.open(Path(engine.job['backup']) / 'files.tar') as archive:
+            self.assertIn(b'old stock updater', archive.extractfile('./upgrade.sh').read())
+        # Preserved configuration remains eligible for subsequent releases.
+        engine.upgrade(self.source, check=True)
+
+    def test_legacy_ui_failure_restores_untracked_files_and_local_configuration(self):
+        template, asset = self.legacy_installation()
+        original = git(self.target, 'rev-parse', 'HEAD')
+        engine = self.engine('health')
+        with self.assertRaises(worker.UpgradeError): engine.upgrade(self.source)
+        self.assertEqual(engine.job['phase'], 'rolled_back')
+        self.assertEqual(git(self.target, 'rev-parse', 'HEAD'), original)
+        self.assertIn('old stock updater', (self.target / 'upgrade.sh').read_text())
+        self.assertEqual((self.target / template).read_bytes(), b'ui header\nbody\nfooter\n')
+        self.assertEqual((self.target / 'data/conf/postfix/main.cf').read_text(), 'relayhost = private.example\n')
+        self.assertNotIn(asset, git(self.target, 'ls-files'))
+
+    def test_modified_untracked_legacy_asset_is_not_silently_replaced(self):
+        _, asset = self.legacy_installation()
+        (self.target / asset).write_bytes(b'personal asset')
+        engine = self.engine()
+        with self.assertRaisesRegex(worker.UpgradeError, 'Untracked files conflict'):
+            engine.upgrade(self.source)
+        self.assertFalse(Guard.events)
+        self.assertEqual((self.target / asset).read_bytes(), b'personal asset')
+
+    def test_upstream_merge_of_known_legacy_ui_is_recognized(self):
+        template = 'data/web/templates/base.twig'
+        (self.source / template).write_bytes(b'ui header\nbody\nfooter\n')
+        git(self.source, 'commit', '-qam', 'Known legacy UI')
+        previous = git(self.source, 'rev-parse', 'HEAD')
+        expected = worker.sha256(self.source / template)
+        git(self.source, 'checkout', '--detach', self.old)
+        (self.source / template).write_bytes(b'header\nbody\nupstream footer\n')
+        git(self.source, 'commit', '-qam', 'New upstream release')
+        upstream = git(self.source, 'rev-parse', 'HEAD')
+        git(self.target, 'fetch', str(self.source), upstream)
+        git(self.target, 'reset', '--hard', upstream)
+        (self.target / template).write_bytes(b'ui header\nbody\nupstream footer\n')
+        git(self.target, 'commit', '-qam', 'Stock updater retained UI')
+        (self.target / '.plates-ui-state.json').write_text(json.dumps({'version': 1, 'commit': previous, 'files': {template: expected}}))
+        git(self.source, 'checkout', 'master'); git(self.source, 'merge', '--no-edit', upstream)
+        engine = self.engine(); engine.upgrade(self.source, check=True)
+        self.assertFalse(Guard.events)
+
+    def test_concurrent_fork_change_to_local_postfix_configuration_requires_review(self):
+        _, _ = self.legacy_installation()
+        (self.source / 'data/conf/postfix/main.cf').write_text('relayhost = release.example\n')
+        git(self.source, 'commit', '-qam', 'Fork configuration migration')
+        engine = self.engine()
+        with self.assertRaisesRegex(worker.UpgradeError, 'Unreviewed local/newer-upstream changes: data/conf/postfix/main.cf'):
+            engine.upgrade(self.source)
+        self.assertFalse(Guard.events)
+
+    def test_local_manifest_cannot_approve_an_unknown_ui_blob(self):
+        _, asset = self.legacy_installation()
+        (self.target / asset).write_bytes(b'unknown personal code')
+        path = self.target / '.plates-ui-state.json'
+        state = json.loads(path.read_text()); state['files'][asset] = worker.sha256(self.target / asset)
+        path.write_text(json.dumps(state))
+        engine = self.engine()
+        with self.assertRaisesRegex(worker.UpgradeError, 'Untracked files conflict'):
+            engine.upgrade(self.source)
         self.assertFalse(Guard.events)
 
     def test_backup_failure_restarts_unchanged_stack(self):

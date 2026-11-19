@@ -26,6 +26,13 @@ HELPER_IMAGE = 'debian:bookworm-slim'
 TERMINAL = {'complete', 'rolled_back', 'failed'}
 KEYS = {'heartbeat': 'SIMPLIFIED_UPDATE_HEARTBEAT', 'queue': 'SIMPLIFIED_UPDATE_QUEUE',
         'status': 'SIMPLIFIED_UPDATE_STATUS', 'lock': 'SIMPLIFIED_UPDATE_LOCK'}
+LEGACY_UI_FILES = {
+    'data/web/inc/twig.inc.php', 'data/web/inc/triggers.admin.inc.php', 'data/web/json_api.php',
+    'data/web/api/openapi.yaml', 'data/web/js/site/mailbox.js', 'data/web/templates/admin.twig',
+    'data/web/templates/base.twig', 'data/web/inc/lib/mailcow/Mailbox/MailboxSearchScope.php',
+}
+LEGACY_UI_DIRS = ('data/web/ui/plates/', 'data/web/inc/lib/mailcow/Ui/')
+INSTANCE_FILES = {'data/conf/postfix/main.cf', 'data/assets/ssl-example/cert.pem', 'data/assets/ssl-example/key.pem'}
 
 
 class UpgradeError(RuntimeError):
@@ -74,7 +81,8 @@ def recovery_signals(operation):
 def execute(arguments, cwd=None, env=None, timeout=3600, allow_failure=False):
     result = subprocess.run(arguments, cwd=cwd, env=env, text=True, capture_output=True, timeout=timeout)
     if result.returncode and not allow_failure:
-        raise UpgradeError(f'{arguments[0]} exited {result.returncode}: {result.stderr[-2000:]}')
+        command = arguments[0] + (' ' + arguments[1] if arguments[0] == 'git' and len(arguments) > 1 else '')
+        raise UpgradeError(f'{command} exited {result.returncode}: {result.stderr[-2000:].strip() or "no error details returned"}')
     return result
 
 
@@ -215,6 +223,81 @@ class Engine:
         if self.env.get('WEBMAIL_CLIENT') in ('sogo', 'roundcube'): return self.env['WEBMAIL_CLIENT']
         running = self.inspect_project(running=True)
         return 'roundcube' if any(c['Config']['Labels'].get('com.docker.compose.service') == 'roundcube-mailcow' for c in running) else 'sogo'
+
+    def ancestry(self, ancestor, descendant):
+        result = self.run(['git', 'merge-base', '--is-ancestor', ancestor, descendant], cwd=self.root, env=self.env, allow_failure=True)
+        if result.returncode not in (0, 1): raise UpgradeError('Unable to compare Git revisions: ' + result.stderr[-1000:])
+        return result.returncode == 0
+
+    def legacy_ui_state(self, commit):
+        path = self.root / '.plates-ui-state.json'
+        if not path.is_file() or path.is_symlink(): return {}
+        try:
+            state = json.loads(path.read_text())
+            previous = state.get('commit', '')
+            if state.get('version') != 1 or not isinstance(previous, str) or not re.fullmatch(r'[a-f0-9]{40,64}', previous) or not isinstance(state.get('files'), dict): return {}
+            # A local JSON file cannot authorize arbitrary code: its package must
+            # be in the trusted release's history, and hashes are checked below.
+            if not self.ancestry(previous, commit): return {}
+            return state
+        except (ValueError, OSError): return {}
+
+    def known_legacy_ui(self, name, state, base=None):
+        if name not in LEGACY_UI_FILES and not name.startswith(LEGACY_UI_DIRS): return False
+        path = self.root / name
+        if any(parent.is_symlink() for parent in [path, *path.parents] if parent != self.root.parent): return False
+        expected = state.get('files', {}).get(name)
+        if not isinstance(expected, str) or not re.fullmatch(r'[a-f0-9]{64}', expected): return False
+        previous = state['commit']
+        # Use raw bytes for package hashes (fonts and CRLF PHP files included).
+        blob = subprocess.run(['git', 'show', previous + ':' + name], cwd=self.root, capture_output=True)
+        if blob.returncode or hashlib.sha256(blob.stdout).hexdigest() != expected: return False
+        if path.is_file() and sha256(path) == expected: return True
+        if base is None or not path.is_file(): return False
+        # The stock updater can merge newer upstream changes into the installed
+        # UI. Recognize only the exact, clean three-way merge of that known package.
+        common = self.command('git', 'merge-base', previous, base)
+        def content(ref):
+            result = subprocess.run(['git', 'show', ref + ':' + name], cwd=self.root, capture_output=True)
+            return result.stdout if result.returncode == 0 else None
+        upstream, before = content(base), content(common)
+        if upstream is None or before is None: return False
+        with tempfile.TemporaryDirectory(prefix='mailcow-ui-review-') as directory:
+            files = [Path(directory) / part for part in ('upstream', 'base', 'ui')]
+            for target, data in zip(files, (upstream, before, blob.stdout)): target.write_bytes(data)
+            merged = subprocess.run(['git', 'merge-file', '-p', *map(str, files)], capture_output=True)
+        return merged.returncode == 0 and merged.stdout == path.read_bytes()
+
+    def installation_plan(self, commit):
+        state = self.legacy_ui_state(commit)
+        preserve, rejected = [], []
+        if not self.ancestry('HEAD', commit):
+            result = self.run(['git', 'merge-base', 'HEAD', commit], cwd=self.root, env=self.env, allow_failure=True)
+            base = result.stdout.strip()
+            if result.returncode or not base:
+                raise UpgradeError('The installed checkout and release have no shared history. No services were changed.')
+            changed = self.command('git', 'diff', '--name-only', '-z', base, 'HEAD').split('\0')
+            for name in filter(None, changed):
+                if name in INSTANCE_FILES and (self.root / name).is_file() and not (self.root / name).is_symlink() and self.command('git', 'rev-parse', base + ':' + name) == self.command('git', 'rev-parse', commit + ':' + name):
+                    preserve.append(name)
+                elif not self.known_legacy_ui(name, state, base): rejected.append(name)
+            if rejected:
+                current = self.command('git', 'rev-parse', '--short', 'HEAD')
+                raise UpgradeError('Installed revision ' + current + ' is not contained in release ' + commit[:12]
+                    + '. Unreviewed local/newer-upstream changes: ' + ', '.join(rejected[:12])
+                    + '. Integrate these changes into the fork before upgrading; no services were changed.')
+            print('Recognized local update commits; preserving instance configuration and replacing verified legacy UI files.', flush=True)
+        candidate = set(filter(None, self.command('git', 'ls-tree', '-r', '--name-only', '-z', commit).split('\0')))
+        untracked = set(filter(None, self.command('git', 'ls-files', '--others', '--exclude-standard', '-z').split('\0')))
+        untracked.update(filter(None, self.command('git', 'ls-files', '--others', '--ignored', '--exclude-standard', '-z').split('\0')))
+        replace = []
+        for name in sorted(candidate & untracked):
+            if name == 'upgrade.sh' or self.known_legacy_ui(name, state): replace.append(name)
+            else: rejected.append(name)
+        if rejected:
+            raise UpgradeError('Untracked files conflict with this release: ' + ', '.join(rejected[:12])
+                + '. Preserve/review these files before retrying; no services were changed.')
+        return preserve, replace
 
     def set_client_environment(self, client):
         self.env.update(WEBMAIL_CLIENT=client, SKIP_SOGO='n' if client == 'sogo' else 'y', COMPOSE_PROFILES=client)
@@ -405,7 +488,7 @@ class Engine:
         commit = self.command('git', 'rev-parse', 'HEAD', cwd=source)
         if not re.fullmatch(r'[a-f0-9]{40,64}', commit): raise UpgradeError('Invalid release commit.')
         self.command('git', 'fetch', str(source), commit)
-        self.command('git', 'merge-base', '--is-ancestor', 'HEAD', commit)
+        preserve, replace = self.installation_plan(commit)
         client = self.selected_client(mode)
         running, volumes, images, bridge, families, old_config = self.capture()
         old_env = dict(self.env)
@@ -435,6 +518,7 @@ class Engine:
                     'old_containers': [c['Id'] for c in running], 'volumes': volumes, 'images': images,
                     'bridge': bridge, 'families': families, 'checksums': {}, 'applied': False, 'committed': False,
                     'request_id': getattr(self, 'request_id', None)}
+        self.job.update(preserved_files=preserve, replaced_untracked=replace)
         firewall = Firewall(bridge, families, identifier, self.run)
         try:
             self.phase('downloading', 'Downloading the selected release images before pausing mail access.')
@@ -463,11 +547,15 @@ class Engine:
             self.phase('applying', 'Installing the selected fork release and webmail configuration.')
             self.job['applied'] = True; atomic_json(self.journal, self.job)
             self.command('git', 'fetch', str(source), commit)
-            tracked = self.command('git', 'ls-files').splitlines()
-            bootstrap = self.root / 'upgrade.sh'
-            if 'upgrade.sh' not in tracked and bootstrap.is_file() and (source / 'upgrade.sh').is_file():
-                if sha256(bootstrap) == sha256(source / 'upgrade.sh'): bootstrap.unlink()
-            self.command('git', 'checkout', '--detach', commit)
+            for name in replace: (self.root / name).unlink()  # Already retained in the verified cold archive.
+            self.command('git', 'checkout', '--no-overwrite-ignore', '--detach', commit)
+            if preserve:
+                self.command('tar', '--xattrs', '--acls', '--numeric-owner', '-xpf', str(backup / 'files.tar'), '-C', str(self.root),
+                             *('./' + name for name in preserve))
+                self.command('git', '-c', 'user.name=Mailcow instance', '-c', 'user.email=instance@localhost',
+                             '-c', 'commit.gpgsign=false', '-c', 'core.hooksPath=/dev/null', 'commit', '--quiet', '--only',
+                             '-m', 'Preserve instance configuration over fork ' + commit[:12], '--', *preserve)
+            self.job['deployed_commit'] = self.command('git', 'rev-parse', 'HEAD')
             self.write_client_environment()
             self.remove_inactive_webmail(client)
             quarantine = backup / 'maintenance.yml'
@@ -540,6 +628,8 @@ def daemon(config, config_path=Path('/etc/mailcow-simplified-updates.json')):
         claimed = None
         try:
             current = engine.command('git', 'rev-parse', 'HEAD')
+            if engine.job and engine.job.get('committed') and engine.job.get('deployed_commit', engine.job['commit']) == current:
+                current = engine.job['commit']
             if time.time() - last_check > 60:
                 ref = config.get('ref', 'master')
                 output = engine.command('git', 'ls-remote', '--', config['repo'], 'refs/heads/' + ref,

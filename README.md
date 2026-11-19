@@ -84,9 +84,18 @@ Do not run `generate_config.sh` again or create a second instance for the upgrad
 
 First export SOGo contacts/calendars if you plan to switch clients. Take a normal
 Mailcow backup and record the current Git revision before the initial conversion.
-Review local changes; the upgrader requires clean tracked files and a release
-that descends from the installed revision. Diverged/custom branches need a
-reviewed merge into the fork before deployment.
+Review local changes; the upgrader requires clean tracked files. It accepts a
+release containing the installed revision, or recognizes the old UI deployment
+and local commits made by Mailcow's stock updater. Legacy UI files must match the
+recorded package from this fork's history, including clean merges with upstream.
+Untracked UI files and an old `upgrade.sh` are backed up before replacement.
+
+Local changes to `data/conf/postfix/main.cf` and the two `data/assets/ssl-example/`
+certificate files are preserved only when the fork did not change their upstream
+versions. They are recorded in a local configuration commit so later checks stay
+clean. Other custom changes, modified legacy assets or newer upstream code require
+a reviewed merge into the fork; the preflight reports the conflicting filenames
+before stopping services. The fork includes upstream `2026-11b` (`4721f2e70`).
 The installation's Compose files and `mailcow.conf` must be root-owned and must
 not be group/world-writable. Keep the backup and worker-state directories outside
 the installation and writable only by root.

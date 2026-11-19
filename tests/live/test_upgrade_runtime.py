@@ -56,12 +56,21 @@ def inner():
         (source / 'docker-compose.yml').write_text(json.dumps(fixture))
         (source / '.gitignore').write_text('mailcow.conf\n.update-ui.lock\n')
         (source / 'version').write_text('old')
+        (source / 'data/conf/postfix').mkdir(parents=True)
+        (source / 'data/conf/postfix/main.cf').write_text('relayhost =\n')
         def git(path, *args): return run('git', '-C', str(path), *args)
         git(source, 'init', '-q', '-b', 'master'); git(source, 'config', 'user.name', 'Upgrade runtime')
         git(source, 'config', 'user.email', 'fixture@example.invalid'); git(source, 'add', '.')
         git(source, 'commit', '-qm', 'Old fixture'); old = git(source, 'rev-parse', 'HEAD')
         (source / 'version').write_text('new'); git(source, 'commit', '-qam', 'New fixture')
         target = folder / 'instance'; run('git', 'clone', '-q', str(source), str(target)); git(target, 'reset', '--hard', old)
+        git(target, 'config', 'user.name', 'Upgrade runtime'); git(target, 'config', 'user.email', 'fixture@example.invalid')
+        (target / 'data/conf/postfix/main.cf').write_text('relayhost = private.example\n')
+        git(target, 'commit', '-qam', 'Before stock update')
+        # The real server has an untracked, renamed stock updater at this path.
+        (target / 'upgrade.sh').write_text('#!/bin/bash\necho old updater\n')
+        (source / 'upgrade.sh').write_text('#!/bin/bash\necho full fork upgrader\n')
+        git(source, 'add', 'upgrade.sh'); git(source, 'commit', '-qm', 'Ship fork entry point')
         (target / 'mailcow.conf').write_text('COMPOSE_PROJECT_NAME=upgradetest\nWEBMAIL_CLIENT=sogo\nSKIP_SOGO=n\nCOMPOSE_PROFILES=sogo\n')
         os.chmod(target / 'mailcow.conf', 0o600)
         config = {'target': str(target), 'backup_dir': str(folder / 'backups'), 'state_dir': str(folder / 'state'), 'reserve_bytes': 0}
@@ -70,6 +79,9 @@ def inner():
             engine.compose('exec', '-T', 'nginx-mailcow', 'sh', '-c', 'echo original-mail > /mail/message')
             engine.upgrade(source)
             assert engine.job['phase'] == 'complete' and 'WEBMAIL_CLIENT=roundcube' in (target / 'mailcow.conf').read_text()
+            assert (target / 'data/conf/postfix/main.cf').read_text() == 'relayhost = private.example\n'
+            assert 'full fork upgrader' in (target / 'upgrade.sh').read_text()
+            assert git(target, 'status', '--porcelain', '--untracked-files=no') == ''
             assert 'sogo-mailcow' not in {c['Config']['Labels']['com.docker.compose.service'] for c in engine.inspect_project()}
             engine.upgrade(source, mode='sogo')
             assert engine.job['phase'] == 'complete' and 'WEBMAIL_CLIENT=sogo' in (target / 'mailcow.conf').read_text()
@@ -80,6 +92,7 @@ def inner():
             else: raise AssertionError('Unhealthy release was accepted')
             assert engine.job['phase'] == 'rolled_back'
             assert (target / 'version').read_text() == 'new'
+            assert (target / 'data/conf/postfix/main.cf').read_text() == 'relayhost = private.example\n'
             assert engine.compose('exec', '-T', 'nginx-mailcow', 'cat', '/mail/message') == 'original-mail'
             assert 'WEBMAIL_CLIENT=sogo' in (target / 'mailcow.conf').read_text()
             print('Real upgrade runtime passed: Compose profiles, shared .248 handover, firewall isolation, cold archives, image/volume/code recovery.')
