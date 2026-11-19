@@ -8,6 +8,26 @@ class mailcow_sso extends rcube_plugin {
     public function init() {
         $this->add_hook('startup', [$this, 'startup']);
         $this->add_hook('authenticate', [$this, 'authenticate']);
+        $this->add_hook('logout_after', [$this, 'logout']);
+    }
+
+    /**
+     * Roundcube only ends its own session. The portal session would sign the browser
+     * straight back in, so hand over to mailcow's logout. Core has already verified
+     * the request token. logout_url is not a core option; this hook applies it.
+     */
+    public function logout($args) {
+        $url = self::logout_target(rcmail::get_instance()->config->get('logout_url'));
+        if ($url !== null) {
+            header('Location: '.$url, true, 303);
+            exit;
+        }
+        return $args;
+    }
+
+    /** Same-origin absolute path only: never off-site, protocol-relative or header-splitting. */
+    public static function logout_target($url) {
+        return is_string($url) && preg_match('~^/(?![/\\\\])[^\s]*$~D', $url) ? $url : null;
     }
 
     public function startup($args) {

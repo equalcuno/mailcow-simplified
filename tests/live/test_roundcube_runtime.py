@@ -194,7 +194,17 @@ if (!$smtp->send_mail('alex@example.org', ['other@example.org'],
 $smtp->disconnect(); echo 'SENT';'''
         assert docker('exec', rc, 'php', '-r', smtp) == 'SENT', 'Roundcube SMTP submission failed'
         assert 'SMTP_RUNTIME_CHECK' in docker('exec', imap, 'cat', '/fixture/sent.eml')
-        inbox('other')  # Same browser/Roundcube cookie must switch to the other inbox.
+        token = inbox('other')  # Same browser/Roundcube cookie must switch to the other inbox.
+        # Roundcube logout must hand over to the portal logout, or SSO signs back in on refresh.
+        class NoRedirect(urllib.request.HTTPRedirectHandler):
+            def redirect_request(self, *args, **kwargs): return None
+        logout = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar), NoRedirect)
+        try:
+            logout.open(url + '?' + urllib.parse.urlencode({'_task': 'logout', '_token': token}))
+            raise AssertionError('Roundcube logout did not redirect')
+        except urllib.error.HTTPError as response:
+            assert response.code == 303 and response.headers['Location'] == '/webmail.php?logout=1', \
+                f'Roundcube logout stayed in webmail: {response.code} {response.headers.get("Location")}'
         cookie(jar, '')
         assert browser.open(url).read() == b'portal', 'A stale Roundcube cookie bypassed portal logout'
         columns = docker('exec', db, 'mariadb', '-uroot', '-pfixture-root', '-Nse',

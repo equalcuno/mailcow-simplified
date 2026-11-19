@@ -51,7 +51,10 @@ foreach ([[], array_fill(0, 51, $row), [$row, $row], [array_merge($row, ['passwo
 // Roundcube plugin test doubles: no real mail services or credentials.
 class rcube_plugin { public function add_hook(...$args) {} }
 class FakeSession { public function remove($key) { unset($_SESSION[$key]); } }
-class FakeConfig { public function get($key, $default = null) { return $key === 'imap_host' ? '172.22.1.250:143' : $default; } }
+class FakeConfig {
+    public $values = ['imap_host' => '172.22.1.250:143'];
+    public function get($key, $default = null) { return $this->values[$key] ?? $default; }
+}
 class rcmail {
     public static $instance;
     public $session;
@@ -82,4 +85,9 @@ foreach (rcmail::get_instance()->shutdown as $callback) $callback();
 verify(!isset($_SESSION['password']), 'Shared internal credential is not persisted in the Roundcube session');
 unset($_SERVER['PHP_AUTH_USER'], $_SERVER['PHP_AUTH_PW']);
 verify(!$plugin->authenticate([])['valid'], 'Missing trusted credentials fail closed');
+// Roundcube logout must also end the portal session, or SSO signs straight back in.
+verify(mailcow_sso::logout_target('/webmail.php?logout=1') === '/webmail.php?logout=1', 'Logout hands over to the portal logout');
+foreach (['https://evil.example/', '//evil.example/', '/\\evil.example/', "/x\r\nSet-Cookie: a=b", '', null, ['/']] as $unsafe) {
+    verify(mailcow_sso::logout_target($unsafe) === null, 'Logout never redirects off-site or splits headers');
+}
 echo "Webmail: $checks checks passed.\n";
