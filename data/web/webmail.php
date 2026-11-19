@@ -5,9 +5,33 @@ use Mailcow\Ui\WebmailAccess;
 
 protect_route(['user', 'admin', 'domainadmin']);
 if (isset($_GET['logout'])) {
-    unset($_SESSION['webmail_login_as']);
+    // Roundcube redirects here after ending its own session. Mirror the portal's
+    // logout (sessions.inc.php): a cross-site link must not end someone's session.
+    if (($_SERVER['HTTP_SEC_FETCH_SITE'] ?? 'same-origin') === 'cross-site') {
+        header('Location: /');
+        exit;
+    }
+    unset($_SESSION['webmail_login_as'], $_SESSION['sogo-sso-user-allowed'], $_SESSION['sogo-sso-pass']);
+    $panel = ['admin' => '/admin/mailbox', 'domainadmin' => '/domainadmin/mailbox'];
+    if (isset($_SESSION['dual-login'])) {
+        // Admin "login as" a user: return to the administrator's own session.
+        $_SESSION['mailcow_cc_username'] = $_SESSION['dual-login']['username'];
+        $_SESSION['mailcow_cc_role'] = $_SESSION['dual-login']['role'];
+        unset($_SESSION['dual-login']);
+        header('Location: '.($panel[$_SESSION['mailcow_cc_role']] ?? '/'));
+        exit;
+    }
     $role = $_SESSION['mailcow_cc_role'];
-    header('Location: '.($role === 'user' ? '/user' : ($role === 'admin' ? '/admin/mailbox' : '/domainadmin/mailbox')));
+    if (isset($panel[$role])) {
+        // An administrator opened a mailbox from the panel; keep the admin session.
+        header('Location: '.$panel[$role]);
+        exit;
+    }
+    session_regenerate_id(true);
+    session_unset();
+    session_destroy();
+    session_write_close();
+    header('Location: /');
     exit;
 }
 $target = isset($_GET['login']) && is_string($_GET['login']) ? $_GET['login'] : WebmailAccess::target($_SESSION);
