@@ -71,6 +71,7 @@
 {% include 'modals/mailbox.twig' %}
 
 <script type='text/javascript'>
+  var WEBMAIL_NAME = '{{ webmail_name|default('Webmail')|e('js') }}';
   var acl = '{{ acl_json|raw }}';
   var lang = {{ lang_mailbox|raw }};
   lang.syncjobs = {{ lang_syncjobs|raw }};

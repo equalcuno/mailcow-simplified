@@ -365,12 +365,12 @@
                       </div>
                     </div>
                   </div>
-                  {% if not skip_sogo %}
+                  {% if webmail_enabled|default(true) %}
                   <div data-acl="{{ acl.sogo_access }}" class="row">
                     <div class="offset-sm-2 col-sm-10">
                       <div class="form-check">
-                        <label><input type="checkbox" class="form-check-input" value="1" name="sogo_access"{% if result.attributes.sogo_access == '1' %} checked{% endif %}> {{ lang.edit.sogo_access }}</label>
-                        <small class="text-muted">{{ lang.edit.sogo_access_info }}</small>
+                        <label><input type="checkbox" class="form-check-input" value="1" name="sogo_access"{% if result.attributes.sogo_access == '1' %} checked{% endif %}> Webmail access</label>
+                        <small class="text-muted">Allow this mailbox to use webmail.</small>
                       </div>
                     </div>
                   </div>

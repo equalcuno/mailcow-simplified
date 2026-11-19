@@ -67,25 +67,25 @@ require_once 'functions.ratelimit.inc.php';
 require_once 'functions.acl.inc.php';
 
 
-$isSOGoRequest = $post['real_rip'] == getenv('IPV4_NETWORK') . '.248';
+$isWebmailRequest = $post['real_rip'] == getenv('IPV4_NETWORK') . '.248';
 // real_rip is the address that connected to Dovecot (for proxied connections the proxy), client_ip the client (for logs)
 $client_ip = filter_var($post['client_ip'] ?? '', FILTER_VALIDATE_IP) ? $post['client_ip'] : $post['real_rip'];
 $result = false;
 // set when the password is right, but the account does not allow this login
 $denied = false;
-if ($isSOGoRequest) {
-  // This is a SOGo Auth request. First check for SSO password.
+if ($isWebmailRequest) {
+  // This is a webmail auth request. First check for SSO password.
   $sogo_sso_pass = file_get_contents("/etc/sogo-sso/sogo-sso.pass");
   if ($sogo_sso_pass === $post['password']){
-    error_log('MAILCOWAUTH: SOGo SSO auth for user ' . $post['username']);
-    set_sasl_log($post['username'], $client_ip, "SOGO");
+    error_log('MAILCOWAUTH: Webmail SSO auth for user ' . $post['username']);
+    set_sasl_log($post['username'], $client_ip, "WEBMAIL");
     $result = true;
   }
 }
 if ($result === false){
-  // If it's a SOGo Request, don't check for protocol access
-  if ($isSOGoRequest) {
-    $service = 'SOGO';
+  // If it's a webmail request, don't check for protocol access
+  if ($isWebmailRequest) {
+    $service = 'WEBMAIL';
     $post['service'] = 'NONE';
   } else {
     $service = $post['service'];
@@ -134,7 +134,7 @@ if ($result) {
   $failed = "MAILCOWAUTH: Login failed for user " . $post['username'] . " with service " .
     preg_replace('/[^a-z0-9]/', '', strtolower((string)$service)) . " from IP " . $client_ip;
   error_log($failed);
-  if (!$isSOGoRequest) {
+  if (!$isWebmailRequest) {
     $redis->publish("F2B_CHANNEL", $failed);
   }
   http_response_code(401); // Unauthorized

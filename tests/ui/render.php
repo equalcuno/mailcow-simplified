@@ -34,7 +34,7 @@ function renderFixture(string $template, string $role, string $path, string $pre
     'css_path' => '/fixtures/mailcow.css', 'js_path' => '/fixtures/mailcow.js',
     'dark_css_path' => '/css/themes/mailcow-darkmode.css',
     'logo' => '/img/cow_mailcow.svg', 'logo_dark' => '/img/cow_mailcow.svg',
-    'mailcow_apps_processed' => [['name' => 'Webmail', 'user_link' => '/SOGo', 'description' => 'Webmail']],
+    'mailcow_apps_processed' => [['name' => 'Webmail', 'user_link' => '/webmail/', 'description' => 'Webmail']],
     'acl' => $acl, 'acl_json' => json_encode($acl), 'role' => $role,
     'is_dual' => 'false', 'allow_admin_email_login' => 'false',
     'csrf_token' => 'fixture-csrf-token', 'pagination_size' => 25,

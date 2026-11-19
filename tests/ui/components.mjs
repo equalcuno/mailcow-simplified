@@ -12,15 +12,23 @@ const pause = () => new Promise(resolve => setTimeout(resolve, 70));
 let checks = 0;
 const check = (condition, message) => { assert.ok(condition, message); checks++; };
 
-async function open(name, path) {
-  const window = new Window({ url: 'http://localhost' + path, settings: { enableJavaScriptEvaluation: true, disableCSSFileLoading: true, disableJavaScriptFileLoading: true } });
+async function open(name, path, options = {}) {
+  const window = new Window({ url: 'http://localhost' + path, settings: { enableJavaScriptEvaluation: true, suppressInsecureJavaScriptEnvironmentWarning: true, disableCSSFileLoading: true, disableJavaScriptFileLoading: true } });
   const html = (await readFile(join(output, name + '.html'), 'utf8')).replace(/<script\b(?![^>]*type="application\/json")[^>]*>[\s\S]*?<\/script>/gi, '');
   window.document.write(html); window.document.close();
   const requests = [], errors = [];
+  for (const [key, value] of Object.entries(options.storage || {})) window.localStorage.setItem(key, value);
+  window.csrf_token = 'fixture-csrf-token';
+  let updateBusy = false;
   let aliasData = [{ address: 'team@example.org', id: 5, goto: 'alex@example.org', active: 1 }];
   window.addEventListener('error', event => errors.push(event.message));
   window.fetch = async (url, options = {}) => {
     requests.push({ url, options });
+    if (url === '/server-update.php') {
+      if (options.method === 'POST') updateBusy = true;
+      return { ok: true, json: async () => ({ ready: !updateBusy, busy: updateBusy, candidate: 'a'.repeat(40), csrf_token: 'update-csrf', message: updateBusy ? 'Update queued' : 'Update available' }) };
+    }
+    if (url === '/mailbox-batch.php') return { ok: true, json: async () => ({ csrf_token: 'rotated-csrf', results: JSON.parse(options.body).rows.map((row, i) => ({ address: row.local_part + '@' + row.domain, created: i === 0, message: i === 0 ? 'Created' : 'Already exists' })) }) };
     if (url === '/api/v1/get/overview') return { ok: true, json: async () => JSON.parse(await readFile(join(output, 'overview.json'), 'utf8')) };
     let data = [];
     const body = JSON.parse(options.body || '{}');
@@ -98,6 +106,40 @@ try {
   check(mail.errors.length === 0, 'Workspace interactions have no script errors: ' + mail.errors.join(', '));
 } finally { await mail.window.happyDOM.close(); }
 
+const bulk = await open('admin', '/admin/mailbox#mailboxes', { storage: { 'plates:domain:/admin/mailbox:admin': 'studio.co.za' } });
+try {
+  const { window, document, requests } = bulk;
+  check(JSON.parse(requests.find(r => r.url.endsWith('/mailbox')).options.body).domain === 'studio.co.za', 'Saved domain applies before the first inventory request');
+  document.querySelector('[data-p-create]').click();
+  const dialog = document.getElementById('p-create-mailbox');
+  check(dialog.querySelector('[data-p-bulk-domain]').value === 'studio.co.za', 'Create dialog inherits the saved domain');
+  dialog.querySelector('[data-p-generate-password]').click();
+  const password = dialog.querySelector('[name="password"]').value;
+  check(/^[a-f0-9]{32}$/.test(password) && dialog.querySelector('[name="password2"]').value === password, 'Generator supplies a matching 128-bit hexadecimal password');
+  const source = dialog.querySelector('[data-p-bulk-input]');
+  source.value = 'first, First User\nsecond, Second User';
+  dialog.querySelector('[data-p-bulk-preview]').click();
+  const secrets = [...dialog.querySelectorAll('.p-bulk-row input')].map(input => input.value);
+  check(secrets.length === 2 && secrets.every(value => /^[a-f0-9]{32}$/.test(value)) && secrets[0] !== secrets[1], 'Bulk review generates an independent strong password for every row');
+  check(!requests.some(r => r.url === '/mailbox-batch.php'), 'Review does not create mailboxes');
+  dialog.querySelector('[data-p-bulk-submit]').click(); await pause();
+  const batch = requests.find(r => r.url === '/mailbox-batch.php');
+  const payload = JSON.parse(batch.options.body);
+  check(payload.csrf_token === 'fixture-csrf-token' && payload.rows.length === 2 && payload.rows[0].domain === 'studio.co.za', 'Explicit batch submission carries domain scope and CSRF');
+  check(window.csrf_token === 'rotated-csrf', 'Batch consumes the rotated CSRF token');
+  check(dialog.querySelector('[data-p-bulk-submit]').disabled && !dialog.querySelector('[data-p-bulk-export]').disabled, 'Partial success enables credential export and prevents automatic retries');
+  check(dialog.querySelectorAll('.p-bulk-row input:disabled').length === 1, 'Only confirmed created passwords become immutable');
+  source.value = 'third, Third User'; source.dispatchEvent(new window.Event('input'));
+  dialog.querySelector('[data-p-bulk-preview]').click();
+  check(!dialog.querySelector('[data-p-bulk-export]').disabled, 'Another review preserves prior successful credentials for export');
+  source.value = 'foreign@unavailable.example';
+  dialog.querySelector('[data-p-bulk-preview]').click();
+  check(dialog.querySelector('[data-p-bulk-submit]').disabled && requests.filter(r => r.url === '/mailbox-batch.php').length === 1, 'Unavailable domains fail review without another write');
+  dialog.close();
+  check(!source.value && dialog.querySelector('[data-p-bulk-export]').disabled, 'Closing clears generated credentials from the dialog');
+  check(![...Array(window.localStorage.length)].map((_, i) => window.localStorage.getItem(window.localStorage.key(i))).some(value => value.includes(secrets[0])), 'Generated credentials never enter persistent browser storage');
+} finally { await bulk.window.happyDOM.close(); }
+
 const login = await open('login-admin', '/admin');
 try {
   const { document, errors } = login;
@@ -129,6 +171,16 @@ try {
   check(document.querySelectorAll('[data-p-activity] .p-hour').length === 25, 'Hourly activity chart renders its complete sample window');
   check(document.querySelector('[data-p-ranking="top_sending_domains"]').textContent.includes('example.org'), 'Top sending domains render safely');
   check(document.querySelector('[data-p-coverage]').textContent.includes('Retained log sample'), 'Overview exposes its retention scope');
+  check(document.querySelector('[data-p-host="cpu"]').textContent === '18.2%' && document.querySelector('[data-p-host="pressure"]').textContent === '0.12%', 'Measured CPU and memory pressure render');
+  check(document.querySelector('[data-p-host="storage"]').textContent === '28.0%', 'Mail filesystem usage renders independently of mailbox quotas');
+  const update = document.querySelector('[data-p-server-update]');
+  check(!update.disabled, 'Overview enables updates for an available host worker');
+  update.click();
+  check(!document.querySelector('[data-p-update-review]').hidden && !requests.some(r => r.url === '/server-update.php' && r.options.method === 'POST'), 'Update button opens a release review before queueing');
+  document.querySelector('[data-p-update-confirm]').click(); await pause();
+  const queued = requests.find(r => r.url === '/server-update.php' && r.options.method === 'POST');
+  check(JSON.parse(queued.options.body).commit === 'a'.repeat(40) && JSON.parse(queued.options.body).csrf_token === 'update-csrf', 'Confirmation queues only the reviewed release with CSRF');
+  check(update.disabled && document.querySelector('[data-p-update-status]').textContent === 'Update queued', 'Queued upgrade disables duplicate submission');
   check(errors.length === 0, 'Overview rendering has no script errors: ' + errors.join(', '));
 } finally { await dashboard.window.happyDOM.close(); }
 

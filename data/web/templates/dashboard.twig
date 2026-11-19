@@ -9,7 +9,7 @@
       <li role="presentation"><span class="dropdown-header fs-6">{{ lang.debug.in_memory_logs }}</span></li>
       <li role="presentation"><button class="dropdown-item" data-bs-target="#tab-postfix-logs" aria-selected="false" aria-controls="tab-postfix-logs" role="tab" data-bs-toggle="tab">Postfix</button></li>
       <li role="presentation"><button class="dropdown-item" data-bs-target="#tab-dovecot-logs" aria-selected="false" aria-controls="tab-dovecot-logs" role="tab" data-bs-toggle="tab">Dovecot</button></li>
-      <li role="presentation"><button class="dropdown-item" data-bs-target="#tab-sogo-logs" aria-selected="false" aria-controls="tab-sogo-logs" role="tab" data-bs-toggle="tab">SOGo</button></li>
+      {% if not skip_sogo %}<li role="presentation"><button class="dropdown-item" data-bs-target="#tab-sogo-logs" aria-selected="false" aria-controls="tab-sogo-logs" role="tab" data-bs-toggle="tab">SOGo</button></li>{% endif %}
       <li role="presentation"><button class="dropdown-item" data-bs-target="#tab-netfilter-logs" aria-selected="false" aria-controls="tab-netfilter-logs" role="tab" data-bs-toggle="tab">Netfilter</button></li>
       <li role="presentation"><button class="dropdown-item" data-bs-target="#tab-autodiscover-logs" aria-selected="false" aria-controls="tab-autodiscover-logs" role="tab" data-bs-toggle="tab">Autodiscover</button></li>
       <li role="presentation"><button class="dropdown-item" data-bs-target="#tab-watchdog-logs" aria-selected="false" aria-controls="tab-watchdog-logs" role="tab" data-bs-toggle="tab">Watchdog</button></li>

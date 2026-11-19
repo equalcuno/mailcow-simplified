@@ -30,6 +30,14 @@ $lines = [
   'not json',
 ];
 $stats = OverviewStats::aggregate($lines, $now);
+verify($stats['timings']['average_send_seconds'] === null && $stats['timings']['send_samples'] === 0, 'Missing timings are unavailable, not zero');
+$timed = OverviewStats::aggregate([
+  $event('postfix/smtp', 'TIME1: to=<a@dest.example>, delay=2.5, delays=1/0.2/0.3/1.0, status=sent (250 OK)'),
+  $event('postfix/smtp', 'TIME2: to=<b@dest.example>, delay=1.5, delays=0.1/0.2/0.7/0.5, status=sent (250 OK)'),
+  $event('postfix/smtp', 'TIME3: to=<c@dest.example>, delay=99, delays=1/1/1/96, status=deferred (timeout)'),
+], $now);
+verify($timed['timings']['average_send_seconds'] === 2.0 && $timed['timings']['send_samples'] === 2, 'Average send time uses measured successful recipient deliveries');
+verify($timed['timings']['average_smtp_response_seconds'] === 0.75, 'SMTP transfer/response phase is measured separately from queue delay');
 verify($stats['counts']['sent_messages'] === 1 && $stats['counts']['outbound_deliveries'] === 2, 'Messages are distinct queue IDs; recipients count separately');
 verify($stats['counts']['received_messages'] === 1 && $stats['counts']['inbound_deliveries'] === 1, 'Local LMTP deliveries are counted separately');
 verify($stats['counts']['deferred_attempts'] === 2, 'Retries remain delivery attempts');
@@ -95,6 +103,10 @@ for ($i = 0; $i < 220; $i++) {
 $demoStats = OverviewStats::aggregate($demo, $demoNow);
 $demoStats['inventory'] = ['domains' => 2, 'active_domains' => 2, 'mailboxes' => 3, 'active_mailboxes' => 2, 'allocated_bytes' => 16106127360, 'used_bytes' => 3972844748, 'stored_messages' => 6451];
 $demoStats['coverage']['capped'] = false; $demoStats['coverage']['scan_limit'] = 20000;
+$demoStats['server'] = ['available' => true, 'cpu' => ['cores' => 4, 'usage' => 18.2],
+  'memory' => ['total' => 8589934592, 'available' => 5637144576, 'usage' => 34.4],
+  'memory_pressure' => ['some' => ['avg10' => 0.12], 'full' => ['avg10' => 0]], 'uptime' => 789300,
+  'storage' => ['total_bytes' => 107374182400, 'available_bytes' => 77309411328, 'used_bytes' => 30064771072, 'usage_percent' => 28]];
 $output = getenv('PLATES_PREVIEW_DIR') ?: sys_get_temp_dir().'/mailcow-plates-preview';
 if (!is_dir($output)) mkdir($output, 0777, true);
 file_put_contents($output.'/overview.json', json_encode($demoStats));

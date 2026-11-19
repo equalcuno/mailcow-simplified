@@ -48,8 +48,8 @@ if (isset($_SESSION['mailcow_cc_role'])) {
 				// Check if user should go to SOGo or /user
 				$user_details = mailbox("get", "mailbox_details", $_SESSION['mailcow_cc_username']);
 				$is_dual = (!empty($_SESSION["dual-login"]["username"])) ? true : false;
-				if (intval($user_details['attributes']['sogo_access']) == 1 && !$is_dual && getenv('SKIP_SOGO') != "y") {
-					header("Location: /SOGo/so/");
+				if (intval($user_details['attributes']['sogo_access']) == 1 && !$is_dual) {
+					header("Location: ".(getenv('WEBMAIL_CLIENT') === 'sogo' ? '/SOGo/so/' : '/webmail/'));
 				} else {
 					header("Location: /user");
 				}

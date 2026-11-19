@@ -230,6 +230,17 @@ class DockerApi:
         else:
           return "0,0,0,0,0,0"
   # api call: container_post - post_action: exec - cmd: system - task: mysql_upgrade
+  def container_post__exec__system__storage(self, request_json, **kwargs):
+    """Read only the mail filesystem in bytes; no client-selected path or shell."""
+    filters = {"id": kwargs['container_id']} if 'container_id' in kwargs else {"name": kwargs['container_name']}
+    for container in self.sync_docker_client.containers.list(filters=filters):
+      result = container.exec_run(["/bin/df", "-B1", "--output=size,used,avail,pcent", "/var/vmail"], user='nobody')
+      if result.exit_code != 0:
+        return Response(content=json.dumps({'available': False}), media_type='application/json')
+      total, used, available, percent = result.output.decode().splitlines()[-1].split()
+      return Response(content=json.dumps({'total_bytes': int(total), 'used_bytes': int(used),
+        'available_bytes': int(available), 'usage_percent': float(percent.rstrip('%')), 'mount': '/var/vmail'}), media_type='application/json')
+
   def container_post__exec__system__mysql_upgrade(self, request_json, **kwargs):
     if 'container_id' in kwargs:
       filters = {"id": kwargs['container_id']}
@@ -621,18 +632,29 @@ class DockerApi:
       host_stats = {
         "cpu": {
           "cores": psutil.cpu_count(),
-          "usage": psutil.cpu_percent()
+          "usage": await asyncio.to_thread(psutil.cpu_percent, interval=0.2)
         },
         "memory": {
           "total": psutil.virtual_memory().total,
+          "available": psutil.virtual_memory().available,
           "usage": psutil.virtual_memory().percent,
-          "swap": psutil.swap_memory()
+          "swap": psutil.swap_memory()._asdict()
         },
         "uptime": time.time() - psutil.boot_time(),
         "system_time": system_time.strftime("%d.%m.%Y %H:%M:%S"),
         "architecture": platform.machine()
       }
 
+      host_stats['sampled_at'] = time.time()
+      host_stats['memory_pressure'] = None
+      try:
+        with open('/proc/pressure/memory') as pressure:
+          host_stats['memory_pressure'] = {
+            line.split()[0]: {key: float(value) for key, value in (field.split('=') for field in line.split()[1:])}
+            for line in pressure if line.strip()
+          }
+      except (OSError, ValueError):
+        pass
       await self.redis_client.set('host_stats', json.dumps(host_stats), ex=10)
     except Exception as e:
       res = {

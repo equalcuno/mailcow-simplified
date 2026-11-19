@@ -4,11 +4,18 @@ on:
     paths:
       - 'data/web/**'
       - 'data/conf/nginx/templates/**'
+      - 'data/conf/roundcube/**'
+      - 'data/Dockerfiles/dockerapi/modules/DockerApi.py'
+      - 'generate_config.sh'
+      - 'docker-compose.yml'
+      - 'helper-scripts/migrate-to-roundcube.sh'
       - 'tests/ui/**'
       - 'tests/live/**'
       - 'helper-scripts/dev-mailcow-dind.sh'
       - 'helper-scripts/check-plates-compatibility.py'
-      - 'update-ui.sh'
+      - 'upgrade.sh'
+      - 'helper-scripts/upgrade_worker.py'
+      - 'helper-scripts/install-upgrade-worker.sh'
       - '.github/workflows/plates-ui.yml'
   workflow_dispatch:
 
@@ -31,12 +38,13 @@ jobs:
         run: python3 helper-scripts/check-plates-compatibility.py
       - name: Check isolated live harness commands
         run: python3 tests/live/test_harness.py
-      - name: Check UI deployment and rollback
-        run: python3 tests/ui/test_update_ui.py
+      - name: Check complete upgrades and rollback
+        run: python3 tests/live/test_upgrade.py
       - name: Render and check domain restrictions
         run: |
           php tests/ui/render.php
           php tests/ui/metrics.php
+          php tests/ui/webmail.php
       - name: Install browser test dependencies
         working-directory: tests/ui
         run: npm ci

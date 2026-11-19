@@ -76,55 +76,26 @@ refreshes activity/inventory, while reloading the page refreshes service status.
 
 The package is tracked under `ui/plates`, outside mailcow's Git-ignored theme
 folders. Fonts are local Red Hat Text/Display assets with their OFL notice.
-SOGo's message-reading interface is a separate application and is not replaced.
+Message reading is provided by the selected Roundcube or SOGo service, separately from the management UI.
 
-## Deploy the UI to an existing instance
+## Deploy or upgrade an existing instance
 
-Commit and push the custom UI to `equalcuno/mailcow-simplified` first. The updater
-downloads the published branch or tag, not this working directory. Copy the
-standalone `update-ui.sh` into the existing server's mailcow directory, then run:
-
-```sh
-sudo bash ./update-ui.sh --check
-sudo bash ./update-ui.sh
-# Or pin a tested release and choose a backup location:
-sudo bash ./update-ui.sh --ref YOUR_RELEASE_TAG --backup-dir /srv/mailcow-ui-backups
-```
-
-The default source is `https://github.com/equalcuno/mailcow-simplified.git`, branch
-`master`. Use `--repo git@github.com:equalcuno/mailcow-simplified.git` for SSH access
-(the account running the script needs repository access), and `--target /opt/mailcow-dockerized`
-if the script lives elsewhere. Requires Python 3.8+, Git, Docker, and Docker Compose.
-
-The script checks the reviewed dependency hashes, the existing autoloader, PHP
-syntax, and the running PHP container's web mount before installation. It refuses
-incompatible Mailcow versions or edits to previously deployed files. There is no
-force flag: review/integrate changes and publish a compatible UI release instead.
-Run this separately from Mailcow's own updater; do not run both concurrently.
-
-Only the Plates package, its `Ui` PHP classes, `MailboxSearchScope.php`, and the
-seven existing PHP/Twig/JS/API integration files are deployed. No image rebuild
-is needed. PHP-FPM is restarted to clear OPcache, briefly interrupting web requests.
-After restart, the updater checks that the added PHP classes load. Mail transport
-services, configuration, branding, Git remotes/index, and database are not updated.
-Test login/MFA and UI actions after deployment; this check does not replace staging.
-
-Before writing, it creates and verifies a file backup under `ui-backups/` (or
-`--backup-dir`) outside the web root. This backs up only files the deployment
-changes, including previous UI state; it is not a mailbox/database backup. Failed
-installs/restarts automatically restore those files and restart PHP again. Backups
-remain until you remove them. The temporary Git checkout is removed on success,
-failure, or a handled interrupt. Power loss/SIGKILL cannot run cleanup/rollback.
-
-For a manual rollback, use the backup directory printed by the updater:
+Use the root-level `upgrade.sh` to deploy the complete fork. It replaces the old
+UI-only updater and handles the web UI, Compose services, Roundcube/SOGo selection,
+configuration, cold backups and guarded recovery together.
 
 ```sh
-sudo bash ./update-ui.sh --restore /opt/mailcow-dockerized/ui-backups/plates-TIMESTAMP-ID
+sudo bash ./upgrade.sh --check
+sudo bash ./upgrade.sh
+sudo bash ./upgrade.sh --skip-roundcube  # preserve the current webmail client
+sudo bash ./upgrade.sh --regress-sogo    # switch back to SOGo without deleting data
 ```
 
-Restore first backs up the current files, restores the saved versions, removes
-files that did not exist before that deployment, and restarts PHP. `.plates-ui-state.json`
-records hashes for subsequent updates; keep it with the installation.
+Commit and publish a tested fork release first; the script downloads its source
+from the configured Git URL/ref, not from this working directory. See the
+[installation and upgrade guide](../../../../README.md) for prerequisites, backups,
+maintenance behavior, recovery, and the optional host worker behind the web update
+button. The web update action preserves the selected client.
 
 ## Upstream updates
 

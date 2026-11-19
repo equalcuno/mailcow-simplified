@@ -13,7 +13,7 @@ let checks = 0;
 const check = (condition, message) => { assert.ok(condition, message); checks++; };
 
 for (const [name, initiallyEmpty] of [['stock', false], ['admin-original', false], ['admin', false], ['admin-original', true]]) {
-  const window = new Window({ url: 'http://localhost/admin/mailbox', settings: { enableJavaScriptEvaluation: true, disableCSSFileLoading: true, disableJavaScriptFileLoading: true } });
+  const window = new Window({ url: 'http://localhost/admin/mailbox', settings: { enableJavaScriptEvaluation: true, suppressInsecureJavaScriptEnvironmentWarning: true, disableCSSFileLoading: true, disableJavaScriptFileLoading: true } });
   try {
     const html = await readFile(join(output, name + '.html'), 'utf8');
     window.document.write(html.replace(/<script\b(?![^>]*type="application\/json")[^>]*>[\s\S]*?<\/script>/gi, ''));

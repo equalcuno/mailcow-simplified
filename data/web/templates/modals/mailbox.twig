@@ -221,12 +221,12 @@
               </div>
             </div>
           </div>
-          {% if not skip_sogo %}
+          {% if webmail_enabled|default(true) %}
           <div class="row">
             <div class="offset-sm-2 col-sm-10">
               <div class="form-check">
-                <label><input type="checkbox" class="form-check-input" value="1" name="sogo_access" id="sogo_access"> {{ lang.edit.sogo_access }}</label>
-                <small class="text-muted">{{ lang.edit.sogo_access_info }}</small>
+                <label><input type="checkbox" class="form-check-input" value="1" name="sogo_access" id="sogo_access"> Webmail access</label>
+                <small class="text-muted">Allow this mailbox to use webmail.</small>
               </div>
             </div>
           </div>
@@ -420,12 +420,12 @@
               </div>
             </div>
           </div>
-          {% if not skip_sogo %}
+          {% if webmail_enabled|default(true) %}
           <div class="row">
             <div class="offset-sm-2 col-sm-10">
               <div class="form-check">
-                <label><input type="checkbox" class="form-check-input" value="1" name="sogo_access"> {{ lang.edit.sogo_access }}</label>
-                <small class="text-muted">{{ lang.edit.sogo_access_info }}</small>
+                <label><input type="checkbox" class="form-check-input" value="1" name="sogo_access"> Webmail access</label>
+                <small class="text-muted">Allow this mailbox to use webmail.</small>
               </div>
             </div>
           </div>

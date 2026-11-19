@@ -13,7 +13,7 @@
   <a href="#tab-mailboxes" data-plates-tab="tab-mailboxes"><span>{{ lang.mailbox.mailboxes }}</span><strong data-plates-count="mailboxes">{{ mailboxes|length }}</strong><i class="bi bi-arrow-up-right" aria-hidden="true"></i></a>
   <div class="plates-summary-note"><i class="bi bi-envelope-open" aria-hidden="true"></i><p>{{ plates.text.workspace_hint }}</p></div>
 </div>
-<div class="plates-domain-filter" data-plates-domain-filter hidden>
+<div class="plates-domain-filter" data-plates-domain-filter data-plates-user="{{ mailcow_cc_username }}" hidden>
   <label for="plates-domain">{{ plates.text.domain_filter }}</label>
   <select class="form-select" id="plates-domain" data-plates-domain>
     <option value="">{{ plates.text.all_domains }}</option>

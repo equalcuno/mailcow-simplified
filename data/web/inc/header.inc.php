@@ -96,6 +96,8 @@ $globalVariables = [
   'logo_dark' => customize('get', 'main_logo_dark'),
   'available_languages' => $AVAILABLE_LANGUAGES,
   'lang' => $lang,
+  'webmail_enabled' => true,
+  'webmail_name' => getenv('WEBMAIL_CLIENT') === 'sogo' ? 'SOGo' : 'Roundcube',
   'skip_sogo' => (getenv('SKIP_SOGO') == 'y'),
   'allow_admin_email_login' => (getenv('ALLOW_ADMIN_EMAIL_LOGIN') == 'n'),
   'hide_mailcow_apps' => $hide_mailcow_apps,

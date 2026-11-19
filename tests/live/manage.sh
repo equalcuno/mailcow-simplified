@@ -53,6 +53,12 @@ configure() {
   set_config SKIP_FTS y
   set_config USE_WATCHDOG n
   set_config LOG_LINES 20000
+  if ! grep -q '^WEBMAIL_CLIENT=' mailcow.conf; then set_config WEBMAIL_CLIENT roundcube; fi
+  WEBMAIL_CLIENT=$(sed -n 's/^WEBMAIL_CLIENT=//p' mailcow.conf)
+  [[ $WEBMAIL_CLIENT == sogo || $WEBMAIL_CLIENT == roundcube ]] || { echo 'Invalid test webmail client.' >&2; exit 1; }
+  set_config COMPOSE_PROFILES "$WEBMAIL_CLIENT"
+  if [[ $WEBMAIL_CLIENT == sogo ]]; then set_config SKIP_SOGO n; else set_config SKIP_SOGO y; fi
+  if ! grep -q '^ROUNDCUBE_DES_KEY=.' mailcow.conf; then set_config ROUNDCUBE_DES_KEY "$(openssl rand -hex 12)"; fi
   cat > docker-compose.override.yml <<'YAML'
 services:
   php-fpm-mailcow:
@@ -60,6 +66,13 @@ services:
     environment:
       DEV_MODE: "y"
 YAML
+}
+
+stop_former_webmail() {
+  local former=sogo
+  [[ $WEBMAIL_CLIENT == sogo ]] && former=roundcube
+  docker compose --profile "$former" stop "$former-mailcow"
+  docker compose --profile "$former" rm -f "$former-mailcow"
 }
 
 block_external_mail() {
@@ -80,6 +93,7 @@ case "${1:-up}" in
     docker compose config --quiet
     printf 'Pulling mailcow images into the nested daemon…\n'
     docker compose pull
+    stop_former_webmail
     docker compose up -d
     block_external_mail
     printf 'Waiting for the real mailcow login (database/schema initialization can take several minutes)…\n'
@@ -97,6 +111,7 @@ case "${1:-up}" in
   sync)
     sync_source
     configure
+    stop_former_webmail
     docker compose up -d
     block_external_mail
     printf 'Working-copy changes copied into the test stack. Refresh the browser.\n'

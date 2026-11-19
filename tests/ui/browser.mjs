@@ -57,11 +57,15 @@ try {
   await page.setViewport({ width: 1440, height: 960 });
   await page.select('[data-plates-domain]', 'studio.co.za');
   await page.waitForFunction(() => document.querySelector('#mailbox_table tbody')?.textContent.includes('ops@studio.co.za') && !document.querySelector('#mailbox_table tbody')?.textContent.includes('alex@example.org'));
+  await page.reload({ waitUntil: 'networkidle0' }); await ready();
+  assert.equal(await page.$eval('[data-plates-domain]', el => el.value), 'studio.co.za', 'Domain scope survives a real reload');
+  await page.waitForFunction(() => document.querySelector('#mailbox_table tbody')?.textContent.includes('ops@studio.co.za') && !document.querySelector('#mailbox_table tbody')?.textContent.includes('alex@example.org'));
   await page.click('[data-plates-clear-domain]');
   await page.waitForFunction(() => document.querySelector('#mailbox_table tbody')?.textContent.includes('alex@example.org'));
   await page.click('.plates-primary-action [data-bs-target="#addMailboxModal"]');
   await page.waitForSelector('#addMailboxModal.show');
   await page.screenshot({ path: join(output, 'add-mailbox.png') });
+  await page.waitForFunction(() => document.activeElement?.closest('#addMailboxModal'));
   await page.keyboard.press('Escape');
   await page.waitForFunction(() => !document.querySelector('#addMailboxModal').classList.contains('show'));
   await page.click('#dark-mode-toggle');
@@ -72,6 +76,7 @@ try {
   await page.goto(preview.url + '/edit/mailbox/alex%40example.org', { waitUntil: 'networkidle0' });
   await page.waitForSelector('form[data-id="editmailbox"] input[name="csrf_token"]');
   await page.$eval('form[data-id="editmailbox"] input[name="name"]', el => { el.value = 'Alex Updated'; });
+  await page.$eval('button[data-id="editmailbox"][data-api-url="edit/mailbox"]', el => el.setAttribute('data-api-reload-window', 'false'));
   const write = page.waitForRequest(request => request.url().endsWith('/api/v1/edit/mailbox') && request.method() === 'POST');
   await page.click('button[data-id="editmailbox"][data-api-url="edit/mailbox"]');
   const request = await write;
@@ -96,7 +101,7 @@ try {
   await page.setCookie({ url: preview.url, name: 'mailcow_components', value: 'redesigned' });
   for (const width of [390, 1440]) {
     await page.setViewport({ width, height: 844 });
-    await page.goto(preview.url + '/admin/mailbox#tab-mailboxes', { waitUntil: 'networkidle0' });
+    await page.goto(preview.url + '/admin/mailbox?viewport=' + width + '#tab-mailboxes', { waitUntil: 'networkidle0' });
     await page.waitForSelector('[data-p-results][aria-busy="false"] .p-data-row');
     assert.equal(await page.$eval('[data-p-advanced]', element => element.open), false, 'Core deep links do not auto-open legacy advanced panels');
     assert.equal(await page.$eval('[data-p-title]', el => el.textContent), 'Mailboxes');
@@ -104,6 +109,11 @@ try {
     await page.screenshot({ path: join(output, `redesigned-mailboxes-${width}.png`), fullPage: true });
     await page.click('[data-p-create]');
     await page.waitForSelector('#p-create-mailbox[open]');
+    await page.click('#p-create-mailbox [data-p-bulk-create] > summary');
+    await page.type('[data-p-bulk-input]', 'first, First User\nsecond, Second User');
+    await page.click('[data-p-bulk-preview]');
+    assert.equal(await page.$$eval('.p-bulk-row input', inputs => inputs.filter(input => /^[a-f0-9]{32}$/.test(input.value)).length), 2, await page.$eval('[data-p-bulk-status]', el => el.textContent));
+    assert.ok(await page.evaluate(() => document.querySelector('#p-create-mailbox').scrollWidth <= document.querySelector('#p-create-mailbox').clientWidth + 1), 'Bulk form fits its dialog on mobile');
     await page.screenshot({ path: join(output, `redesigned-create-${width}.png`) });
     await page.keyboard.press('Escape');
   }

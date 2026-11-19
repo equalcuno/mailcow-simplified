@@ -85,8 +85,15 @@ location ^~ /.well-known/mta-sts.txt {
     fastcgi_param PATH_INFO $fastcgi_path_info;
 }
 
+{% if SKIP_SOGO %}
+# Roundcube does not implement DAV or Exchange ActiveSync.
+location = /.well-known/caldav { return 410; }
+location = /.well-known/carddav { return 410; }
+location ^~ /Microsoft-Server-ActiveSync { return 410; }
+{% else %}
 rewrite ^/.well-known/caldav$ /SOGo/dav/ permanent;
 rewrite ^/.well-known/carddav$ /SOGo/dav/ permanent;
+{% endif %}
 
 
 location / {
@@ -121,6 +128,7 @@ location ~ \.php$ {
     fastcgi_param HTTP_X_REAL_IP $mailcow_client_ip;
     # trusted internal-auth marker; empty for external clients (see nginx.conf map)
     fastcgi_param SOGO_AUTH_INTERNAL $sogo_auth_internal;
+    fastcgi_param WEBMAIL_AUTH_INTERNAL $sogo_auth_internal;
     fastcgi_read_timeout 3600;
     fastcgi_send_timeout 3600;
 }
@@ -170,6 +178,50 @@ location /rspamd/ {
 }
 {% endif %}
 
+{% if SKIP_SOGO %}
+# BEGIN ROUNDCUBE ROUTES
+# All webmail requests, including existing Roundcube sessions, require a live portal session.
+location = /webmail { return 302 $client_req_scheme://$http_host/webmail/; }
+location = /webmail-auth-verify {
+    internal;
+    proxy_pass_request_body off;
+    proxy_set_header Content-Length "";
+    proxy_set_header X-Real-IP $mailcow_client_ip;
+    proxy_set_header Host $http_host;
+    proxy_set_header Authorization "";
+    proxy_pass http://127.0.0.1:65510/webmail-auth;
+}
+location ^~ /webmail/ {
+    auth_request /webmail-auth-verify;
+    auth_request_set $webmail_auth $upstream_http_x_auth;
+    error_page 401 = @webmail_login;
+    resolver 127.0.0.11 ipv6=off valid=30s;
+    set $roundcube_backend roundcube-mailcow:80;
+    rewrite ^/webmail/(.*)$ /$1 break;
+    proxy_pass http://$roundcube_backend;
+    proxy_set_header Authorization $webmail_auth;
+    proxy_set_header Host $http_host;
+    proxy_set_header X-Forwarded-Proto $client_req_scheme;
+    proxy_set_header X-Forwarded-Prefix /webmail;
+    proxy_set_header X-Forwarded-For $mailcow_client_ip;
+    proxy_set_header X-Real-IP $mailcow_client_ip;
+    proxy_read_timeout 300;
+    client_max_body_size {{ NGINX_MAX_BODY_SIZE }};
+    add_header Cache-Control "no-store" always;
+    add_header Referrer-Policy "same-origin" always;
+}
+location @webmail_login { return 302 $client_req_scheme://$http_host/?webmail_login=1; }
+# Preserve bookmarks to the old message-reading UI, without advertising unsupported protocols.
+location ~* ^/SOGo(?:/so(?:/.*)?|/?)$ { return 302 $client_req_scheme://$http_host/webmail/; }
+location ^~ /SOGo/dav { return 410; }
+location ^~ /principals { return 410; }
+
+
+
+# END ROUNDCUBE ROUTES
+{% else %}
+location ^~ /webmail { return 302 $client_req_scheme://$http_host/SOGo/so/; }
+{% endif %}
 {% if not SKIP_SOGO %}
 location ^~ /principals {
     return 301 /SOGo/dav;
@@ -282,7 +334,6 @@ location (^/SOGo/so/ControlPanel/Products/[^/]*UI/Resources/.*\.(jpg|png|gif|css
     alias /usr/local/lib/GNUstep/SOGo/$1.SOGo/Resources/$2;
 }
 {% endif %}
-
 
 include /etc/nginx/conf.d/site.*.custom;
 

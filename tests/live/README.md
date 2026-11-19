@@ -34,7 +34,7 @@ in its own named volume. It uses `--privileged`, as required by the official
 [Docker-in-Docker image](https://hub.docker.com/_/docker); run it only as a local
 development environment. Docker Desktop's Linux VM runs the nested Linux stack
 on macOS. Allocate enough resources for the [mailcow requirements](https://docs.mailcow.email/getstarted/prerequisite-system/).
-ClamAV, Olefy and full-text indexing are disabled for this test profile; SOGo,
+ClamAV, Olefy and full-text indexing are disabled for this test profile; Roundcube,
 Postfix, Dovecot, Rspamd, MariaDB and Redis are real services.
 
 The launcher uploads a snapshot of Git-tracked and unignored files through Docker
@@ -107,3 +107,17 @@ ports or the harness image requires `down` then `up` with the same flags.
 provides a slower fallback where nested overlay2 is unsupported. After changing
 `tests/live/manage.sh` or its Dockerfile, recreate the outer container with `down`
 and `up` to rebuild the harness. Test data stays in the named volumes.
+
+Two smaller opt-in runtime suites use temporary, ownership-labelled containers:
+
+```sh
+python3 tests/live/test_roundcube_runtime.py
+python3 tests/live/test_upgrade_runtime.py
+```
+
+The first checks real Roundcube/MariaDB/IMAP/SMTP integration and the nginx session
+gate. The second uses the built `mailcow-ui-test-harness:latest` image with a separate
+Docker daemon to check Compose profile switching, firewall isolation, cold archives
+and injected-failure recovery of code, configuration and mailbox-volume data.
+It substitutes fixture services and health probes for Mailcow and does not install
+systemd units on the host. Both remove only their own temporary containers and data.

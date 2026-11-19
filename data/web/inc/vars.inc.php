@@ -132,8 +132,8 @@ $SHOW_DKIM_PRIV_KEYS = false;
 $MAILCOW_APPS = array(
   array(
     'name' => 'Webmail',
-    'link' => '/SOGo/so',
-    'user_link' => '/SOGo/so',
+    'link' => '/webmail/',
+    'user_link' => '/webmail/',
     'hide' => true
   )
 );
@@ -205,7 +205,7 @@ $MAILBOX_DEFAULT_ATTRIBUTES['force_pw_update'] = false;
 // Force 2FA enrollment at next login
 $MAILBOX_DEFAULT_ATTRIBUTES['force_tfa'] = false;
 
-// Enable SOGo access - Users will be redirected to SOGo after login (set to false to disable redirect by default)
+// Webmail access. Keep the existing sogo_access database key for upgrade compatibility.
 $MAILBOX_DEFAULT_ATTRIBUTES['sogo_access'] = true;
 
 // How to handle tagged emails

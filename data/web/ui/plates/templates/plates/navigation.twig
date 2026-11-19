@@ -31,6 +31,7 @@
           <a class="plates-rail-link" href="{{ mailbox_path }}#tab-groups" data-plates-tab="tab-groups"><i class="bi bi-people" aria-hidden="true"></i>{{ lang.groups.groups }}</a>
         {% endif %}
       {% endif %}
+      {% if mailcow_cc_role == 'user' %}<a class="plates-rail-link" href="/webmail/"><i class="bi bi-envelope" aria-hidden="true"></i>Webmail</a>{% endif %}
       <a class="plates-rail-link" href="/quarantine" {% if is_uri('quarantine') %}aria-current="page"{% endif %}><i class="bi bi-shield-check" aria-hidden="true"></i>{{ lang.header.quarantine }}</a>
       {% if mailcow_cc_role == 'admin' %}
         <a class="plates-rail-link" href="/admin/queue" {% if is_uri('queue') %}aria-current="page"{% endif %}><i class="bi bi-send" aria-hidden="true"></i>{{ lang.queue.queue_manager }}</a>
@@ -42,7 +43,7 @@
     </nav>
     <div class="plates-rail-footer">
       <a class="plates-rail-link" href="/?ui=stock"><i class="bi bi-arrow-left-right" aria-hidden="true"></i>{{ plates.text.stock }}</a>
-      <span class="plates-eyebrow">mailcow · Plates</span>
+      <span class="plates-eyebrow">Mailcow Simplified</span>
     </div>
   </div>
 </aside>

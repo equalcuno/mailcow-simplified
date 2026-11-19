@@ -1,6 +1,6 @@
 {% extends '@upstream/mailbox.twig' %}
 {% block content %}
-<section class="p-workspace" data-p-workspace data-p-role="{{ mailcow_cc_role }}">
+<section class="p-workspace" data-p-workspace data-p-user="{{ mailcow_cc_username }}" data-p-role="{{ mailcow_cc_role }}">
   <header class="p-workspace-heading"><div><p class="p-kicker">{{ plates.text.workspace }}</p><h1 data-p-title>{{ lang.mailbox.domains }}</h1><p data-p-hint>{{ plates.text.domains_hint }}</p></div><button class="btn btn-primary p-button p-button-primary" type="button" data-p-create><i class="bi bi-plus-lg" aria-hidden="true"></i><span>{{ lang.mailbox.add_domain }}</span></button></header>
   <div class="p-workspace-counts"><button type="button" data-p-task="tab-domains"><i class="bi bi-globe2" aria-hidden="true"></i><span>{{ lang.mailbox.domains }}<strong>{{ domains|length }}</strong></span><i class="bi bi-arrow-up-right" aria-hidden="true"></i></button><button type="button" data-p-task="tab-mailboxes"><i class="bi bi-inboxes" aria-hidden="true"></i><span>{{ lang.mailbox.mailboxes }}<strong>{{ mailboxes|length }}</strong></span><i class="bi bi-arrow-up-right" aria-hidden="true"></i></button></div>
   <div class="p-list-panel">

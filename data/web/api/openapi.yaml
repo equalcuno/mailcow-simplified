@@ -87,6 +87,26 @@ paths:
                       deferred_attempts: {type: integer}
                       bounced_deliveries: {type: integer}
                       rejected_attempts: {type: integer}
+                  timings:
+                    type: object
+                    description: Successful outbound recipient samples; SMTP response includes the transfer phase, not pure network RTT.
+                    properties:
+                      average_send_seconds: {type: [number, "null"]}
+                      send_samples: {type: integer}
+                      average_smtp_response_seconds: {type: [number, "null"]}
+                      smtp_response_samples: {type: integer}
+                      definition: {type: string}
+                  server:
+                    type: object
+                    description: Optional Docker host kernel telemetry and the mail filesystem. Missing measurements remain unavailable.
+                    properties:
+                      available: {type: boolean}
+                      cpu: {type: object}
+                      memory: {type: object}
+                      memory_pressure: {type: [object, "null"]}
+                      storage: {type: object}
+                      uptime: {type: number}
+                      sampled_at: {type: number}
                   coverage:
                     type: object
                     properties:

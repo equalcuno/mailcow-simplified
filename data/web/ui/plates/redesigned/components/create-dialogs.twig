@@ -7,8 +7,19 @@
     <label>{{ plates.text.quota }}<input name="quota" type="number" min="0" required value="1024"></label>
     <label>{{ lang.login.password }}<input name="password" type="password" required autocomplete="new-password" data-formcache-skip></label>
     <label>{{ plates.text.password_confirm }}<input name="password2" type="password" required autocomplete="new-password" data-formcache-skip></label>
+    <button type="button" class="btn btn-secondary p-button" data-p-generate-password>Generate password · 32 hex characters</button>
     <footer><button type="button" class="btn btn-secondary p-button" data-p-dialog-close>{{ plates.text.cancel }}</button><button type="button" class="btn btn-primary p-button p-button-primary" data-action="add_item" data-id="plates_add_mailbox" data-api-url="add/mailbox" data-api-attr="{}">{{ plates.text.create }}</button></footer>
   </form>
+  <details class="p-bulk-create" data-p-bulk-create><summary>Create multiple mailboxes</summary>
+    <p>One mailbox per line: <code>address, display name, optional password</code>. Addresses without a domain use the selected domain. Each missing password gets 16 random bytes as 32 hex characters.</p>
+    <label>Mailboxes<textarea data-p-bulk-input rows="5" spellcheck="false" autocomplete="off" placeholder="alex, Alex Morgan&#10;hello, Customer Support"></textarea></label>
+    <div class="p-form-columns"><label>Default domain<select data-p-bulk-domain>{% for domain in domains %}<option>{{ domain }}</option>{% endfor %}</select></label><label>Quota per mailbox (MiB)<input data-p-bulk-quota type="number" min="0" value="1024" required></label></div>
+    <button type="button" class="btn btn-secondary p-button" data-p-bulk-preview>Review mailboxes</button>
+    <p data-p-bulk-status role="status"></p>
+    <div data-p-bulk-rows></div>
+    <footer><button type="button" class="btn btn-secondary p-button" data-p-bulk-export disabled>Download created credentials</button><button type="button" class="btn btn-primary p-button" data-p-bulk-submit disabled>Create reviewed mailboxes</button></footer>
+    <small>Up to 50 per batch. Server permissions, quotas and password rules still apply. Results are shown per mailbox; successful rows are not submitted again.</small>
+  </details>
 </dialog>
 {% if mailcow_cc_role == 'admin' %}
 <dialog class="p-sheet" id="p-create-domain" aria-labelledby="p-create-domain-title"><header><div><p class="p-kicker">{{ plates.text.workspace }}</p><h2 id="p-create-domain-title">{{ lang.mailbox.add_domain }}</h2></div><button type="button" class="p-icon-button" data-p-dialog-close aria-label="{{ plates.text.close_dialog }}"><i class="bi bi-x-lg" aria-hidden="true"></i></button></header>

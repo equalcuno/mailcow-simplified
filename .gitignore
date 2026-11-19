@@ -85,3 +85,6 @@ tests/ui/node_modules/
 /ui-backups/
 /.plates-ui-state.json
 /.update-ui.lock
+
+/migration-backups/
+/data/conf/roundcube/custom/config.inc.php

@@ -85,9 +85,8 @@ if (isset($_POST["verify_tfa_login"])) {
         }
         if (intval($user_details['attributes']['sogo_access']) == 1 &&
             intval($user_details['attributes']['force_pw_update']) != 1 &&
-            getenv('SKIP_SOGO') != "y" &&
             !$is_dual) {
-          header("Location: /SOGo/so/");
+          header("Location: ".(getenv('WEBMAIL_CLIENT') === 'sogo' ? '/SOGo/so/' : '/webmail/'));
           die();
         } else {
           header("Location: /user");
@@ -165,9 +164,8 @@ if (isset($_POST["login_user"]) && isset($_POST["pass_user"])) {
     }
     if (intval($user_details['attributes']['sogo_access']) == 1 &&
         intval($user_details['attributes']['force_pw_update']) != 1 &&
-        getenv('SKIP_SOGO') != "y" &&
         !$is_dual) {
-      header("Location: /SOGo/so/");
+      header("Location: ".(getenv('WEBMAIL_CLIENT') === 'sogo' ? '/SOGo/so/' : '/webmail/'));
       die();
     } else {
       header("Location: /user");

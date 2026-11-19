@@ -26,7 +26,10 @@
     const primaryAction = document.createElement('div');
     primaryAction.className = 'plates-primary-action';
     heading.append(primaryAction);
+    const domainKey = 'plates:domain:' + location.pathname + ':' + (domainFilter.dataset.platesUser || '');
     let selectedDomain = '';
+    try { const saved = localStorage.getItem(domainKey); if (Array.from(domainSelect.options).some(option => option.value === saved)) selectedDomain = domainSelect.value = saved; } catch (_) {}
+    const saveDomain = () => { try { localStorage.setItem(domainKey, selectedDomain); } catch (_) {} };
 
     // Move the original buttons, preserving upstream listeners and every permitted tool.
     // Only the three daily tasks sit at the top level; the rest stay under More tools.
@@ -165,11 +168,13 @@
     };
     domainSelect.addEventListener('change', () => {
       selectedDomain = domainSelect.value;
+      saveDomain();
       reloadMailboxes();
     });
     document.querySelector('[data-plates-clear-domain]').addEventListener('click', () => {
       selectedDomain = '';
       domainSelect.value = '';
+      saveDomain();
       reloadMailboxes();
       domainSelect.focus();
     });

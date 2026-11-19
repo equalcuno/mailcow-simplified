@@ -17,7 +17,7 @@ let checks = 0;
 function check(condition, message) { assert.ok(condition, message); checks++; }
 
 async function fixture(name, path, role = 'admin') {
-  const window = new Window({ url: 'http://localhost' + path, settings: { enableJavaScriptEvaluation: true, disableCSSFileLoading: true, disableJavaScriptFileLoading: true } });
+  const window = new Window({ url: 'http://localhost' + path, settings: { enableJavaScriptEvaluation: true, suppressInsecureJavaScriptEnvironmentWarning: true, disableCSSFileLoading: true, disableJavaScriptFileLoading: true } });
   // Execute only the files under test; fixture inline handlers remain covered by browser.mjs.
   const html = (await readFile(join(output, name + '.html'), 'utf8')).replace(/<script\b(?![^>]*type="application\/json")[^>]*>[\s\S]*?<\/script>/gi, '');
   window.document.write(html);

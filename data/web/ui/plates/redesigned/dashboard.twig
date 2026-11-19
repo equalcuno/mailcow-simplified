@@ -3,8 +3,23 @@
 <section class="p-overview" data-p-overview>
   <header class="p-workspace-heading"><div><p class="p-kicker">{{ hostname }}</p><h1>{{ plates.text.overview }}</h1><p>{{ plates.text.overview_activity_hint }}</p></div><button class="btn btn-secondary p-button" type="button" data-p-overview-refresh><i class="bi bi-arrow-clockwise" aria-hidden="true"></i>{{ plates.text.refresh }}</button></header>
   <p class="p-coverage" data-p-coverage aria-live="polite">{{ plates.text.loading }}</p>
+  <div class="p-server-grid" aria-label="Server resources">
+    <article class="p-metric"><span>CPU usage</span><strong data-p-host="cpu">—</strong><small data-p-host="cores">Waiting for host telemetry</small></article>
+    <article class="p-metric"><span>Memory usage</span><strong data-p-host="memory">—</strong><small data-p-host="memory_available">Available / total</small></article>
+    <article class="p-metric"><span>Memory pressure</span><strong data-p-host="pressure">—</strong><small>Linux PSI · time stalled over 10 seconds</small></article>
+    <article class="p-metric"><span>Mail filesystem</span><strong data-p-host="storage">—</strong><small data-p-host="storage_available">Available / total</small></article>
+    <article class="p-metric"><span>Average send time</span><strong data-p-timing="average_send_seconds">—</strong><small data-p-timing-samples="send_samples">Queue to successful recipient delivery</small></article>
+    <article class="p-metric"><span>Average SMTP transfer / response</span><strong data-p-timing="average_smtp_response_seconds">—</strong><small data-p-timing-samples="smtp_response_samples">Successful outbound deliveries</small></article>
+    <article class="p-metric"><span>Overview response</span><strong data-p-api-time>—</strong><small>Browser-to-server request duration</small></article>
+    <article class="p-metric"><span>Host uptime</span><strong data-p-host="uptime">—</strong><small>Docker host kernel</small></article>
+  </div>
+  <section class="p-insight p-update-panel" data-p-updates>
+    <header><div><h2>Server updates</h2><p>Verified backup, maintenance window, health checks and automatic recovery before reopening mail access.</p></div><button class="btn btn-primary p-button" type="button" data-p-server-update disabled><i class="bi bi-arrow-up-circle" aria-hidden="true"></i>Update server</button></header>
+    <p data-p-update-status role="status">Checking update service…</p>
+    <details data-p-update-review hidden><summary>Review the update</summary><p data-p-update-release></p><p>Webmail and mail connections pause during the backup and update. Other mail servers will retry delivery. Keep this backup until the new release is verified.</p><button class="btn btn-primary p-button" type="button" data-p-update-confirm>Back up and update</button></details>
+  </section>
   <div class="p-metric-grid">
-    {% for key, title in {sent_messages: plates.text.messages_sent, received_messages: plates.text.messages_received, deferred_attempts: plates.text.deferred, rejected_attempts: plates.text.rejected} %}
+    {% for key, title in {sent_messages: plates.text.messages_sent, received_messages: plates.text.messages_received, deferred_attempts: plates.text.deferred, rejected_attempts: plates.text.rejected, bounced_deliveries: plates.text.bounced} %}
     <article class="p-metric"><span>{{ title }}</span><strong data-p-metric="{{ key }}">—</strong><small>{{ key in ['sent_messages', 'received_messages'] ? plates.text.distinct_messages : plates.text.delivery_attempts }}</small></article>
     {% endfor %}
   </div>

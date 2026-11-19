@@ -123,6 +123,7 @@ if (isset($_POST["logout"])) {
     $_SESSION["mailcow_cc_role"] = $_SESSION["dual-login"]["role"];
     unset($_SESSION['sogo-sso-user-allowed']);
     unset($_SESSION['sogo-sso-pass']);
+    unset($_SESSION['webmail_login_as']);
     unset($_SESSION["dual-login"]);
     if ($_SESSION["mailcow_cc_role"] == "admin"){
       header("Location: /admin/mailbox");

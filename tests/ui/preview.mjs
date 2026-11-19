@@ -28,7 +28,8 @@ const mailboxes = [
   percent_in_use: used, percent_class: 'success', messages: 1874,
   last_imap_login: 1794915000, last_smtp_login: 1794915000, last_sso_login: 1794915000,
   last_pop3_login: 0, last_pw_change: '12 Nov 2026', tags: [],
-  attributes: { imap_access: 1, pop3_access: 0, smtp_access: 1, sieve_access: 1, sogo_access: 1, eas_access: 1, dav_access: 1, shared: 0, quarantine_notification: 'daily', quarantine_category: 'reject' },
+  created: '2026-11-01 12:00:00', modified: '2026-11-12 12:00:00', authsource: 'mailcow',
+  attributes: { passwd_update: '2026-11-12 12:00:00', imap_access: 1, pop3_access: 0, smtp_access: 1, sieve_access: 1, sogo_access: 1, eas_access: 1, dav_access: 1, shared: 0, quarantine_notification: 'daily', quarantine_category: 'reject' },
 }));
 
 async function bundle(files, separator = '\n;\n') {
@@ -57,6 +58,8 @@ export async function startPreview(port = 0) {
       res.end(typeof data === 'object' && !Buffer.isBuffer(data) ? JSON.stringify(data) : data);
     };
     try {
+      if (url.pathname === '/server-update.php') return send({ ready: false, busy: false, candidate: null, message: 'Local preview: host upgrades are disabled.' });
+      if (url.pathname === '/mailbox-batch.php') return send({ message: 'Local preview: mailbox creation is disabled.' }, 'application/json', 403);
       if (url.pathname.startsWith('/api/v1/') || url.pathname.startsWith('/inc/ajax/')) {
         let raw = '';
         for await (const part of req) raw += part;

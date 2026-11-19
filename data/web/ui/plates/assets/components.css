@@ -230,3 +230,23 @@ body.plates-guest:has([data-p-login]) { height: 100dvh; overflow: hidden; }
 .plates-ui .p-metric-footnote { margin: 24px 0 0; }
 @media (max-width: 1000px) { .plates-ui .p-metric-grid { grid-template-columns: repeat(2,minmax(0,1fr)); } }
 @media (max-width: 700px) { .plates-ui .p-overview-grid { grid-template-columns: 1fr; } .plates-ui .p-metric, .plates-ui .p-insight { padding: 18px; } .plates-ui .p-insight header { flex-wrap: wrap; } .plates-ui .p-activity-chart { gap: 3px; } }
+
+/* Host telemetry and the reviewed update action. */
+.p-server-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:16px; margin:24px 0; }
+.p-server-grid .p-metric { min-width:0; }
+.p-server-grid .p-metric strong { font-size:28px; overflow-wrap:anywhere; }
+.p-update-panel { margin:24px 0; }
+.p-update-panel > header { display:flex; align-items:center; justify-content:space-between; gap:24px; }
+.p-update-panel details { border-top:1px solid var(--p-line); padding-top:16px; }
+@media(max-width:1050px) { .p-server-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media(max-width:600px) { .p-server-grid { grid-template-columns:1fr; } .p-update-panel > header { align-items:flex-start; flex-direction:column; } }
+
+.p-bulk-create { padding:24px; border-top:1px solid var(--p-line); }
+.p-bulk-create > summary { cursor:pointer; font-weight:700; }
+.p-bulk-create label { display:grid; gap:8px; margin-bottom:16px; min-width:0; }
+.p-bulk-create textarea, .p-bulk-create input, .p-bulk-create select { width:100%; border:1px solid var(--p-line); border-radius:8px; padding:10px; background:var(--p-paper); color:var(--p-iron); }
+.p-bulk-create p, .p-bulk-create small { color:var(--p-steel); font-size:13px; }
+.p-bulk-row { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:8px; padding:12px 0; border-bottom:1px solid var(--p-line); }
+.p-bulk-row > span:first-child { overflow-wrap:anywhere; }
+.p-bulk-row > span:last-child { grid-column:1/-1; font-size:12px; color:var(--p-steel); }
+.p-bulk-create footer { display:flex; flex-wrap:wrap; gap:12px; margin:20px 0; }
