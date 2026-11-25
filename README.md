@@ -179,6 +179,11 @@ job at a time. It preserves the selected webmail client. The web process does no
 receive a host Docker socket. The page may become unavailable during maintenance;
 the host worker and journal continue independently.
 
+If an update rolls back, the overview reports the original failing stage and
+readiness probe. The private transaction journal retains the error, and the backup
+contains `failure-diagnostics.json` with bounded, redacted candidate-container logs
+captured before recovery replaces those containers. Existing backups remain intact.
+
 ```sh
 sudo journalctl -u mailcow-simplified-updates.service -n 100
 # Recover an unfinished transaction after inspecting the journal/backups:

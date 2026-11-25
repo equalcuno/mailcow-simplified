@@ -144,7 +144,7 @@ def execute(arguments, cwd=None, env=None, timeout=3600, allow_failure=False, st
         finally:
             process.stdout.close()
     if result.returncode and not allow_failure:
-        detail = (result.stdout if stream else result.stderr)[-2000:].strip() or 'no error details returned'
+        detail = (result.stdout if stream else result.stderr or result.stdout)[-2000:].strip() or 'no error details returned'
         raise UpgradeError(f'{command} exited {result.returncode}: {redact_output(detail, hidden)}')
     return result
 
@@ -313,7 +313,37 @@ class Engine:
             with contextlib.suppress(Exception): self.notify(self.public_status())
 
     def public_status(self):
-        return {key: self.job.get(key) for key in ('id', 'phase', 'message', 'commit', 'updated_at')}
+        status = {key: self.job.get(key) for key in ('id', 'phase', 'message', 'commit', 'updated_at')}
+        failure = self.job.get('failure')
+        if failure:
+            status['failure'] = failure
+            if self.job['phase'] in ('failed', 'rolled_back', 'manual_recovery'):
+                status['message'] += ' Failed during ' + failure['phase'].replace('_', ' ') + ': ' + ' '.join(failure['message'].split())[:500]
+        return status
+
+    def retain_failure(self, error):
+        hidden = secret_values(self.env)
+        self.job['failure'] = {'phase': self.job['phase'], 'message': redact_output(str(error), hidden)[-4000:],
+                               'at': int(time.time())}
+        atomic_json(self.journal, self.job)
+        self.log('Upgrade failure before recovery: ' + self.job['failure']['message'])
+        if not self.job.get('guarded'): return
+        # Recovery removes candidate containers. Retain their last logs first, without
+        # copying container environments, credentials or unbounded mailbox logs.
+        try:
+            diagnostics = []
+            for container in self.inspect_project():
+                name = container['Config']['Labels']['com.docker.compose.service']
+                state = container.get('State', {})
+                result = self.run(['docker', 'logs', '--tail', '60', container['Id']],
+                                  env=self.env, allow_failure=True, timeout=10)
+                diagnostics.append({'service': name, 'running': state.get('Running'), 'exit_code': state.get('ExitCode'),
+                                    'health': state.get('Health', {}).get('Status'),
+                                    'logs': redact_output(result.stdout + result.stderr, hidden)[-8000:]})
+            atomic_json(Path(self.job['backup']) / 'failure-diagnostics.json',
+                        {'failure': self.job['failure'], 'services': diagnostics})
+        except Exception as diagnostic_error:
+            self.log('Could not retain all candidate logs: ' + str(diagnostic_error))
 
     def selected_client(self, mode):
         if mode == 'sogo': return 'sogo'
@@ -527,6 +557,7 @@ class Engine:
     def health(self, expected):
         deadline = time.monotonic() + int(self.config.get('health_timeout', 240))
         last = 'Services are starting.'
+        reported = None
         while time.monotonic() < deadline:
             containers = self.inspect_project()
             services = {c['Config']['Labels']['com.docker.compose.service']: c for c in containers}
@@ -537,22 +568,28 @@ class Engine:
                 if not state.get('Running') or state.get('Health', {}).get('Status', 'healthy') != 'healthy':
                     last = name + ' is not ready.'; ok = False; break
             if ok:
-                probes = [('nginx-mailcow', ['nginx', '-t']),
-                          ('php-fpm-mailcow', ['php', '-r', 'require "/web/inc/lib/vendor/autoload.php"; exit(!is_file("/web/inc/lib/mailcow/Ui/WebmailAccess.php") || class_exists("Mailcow\\\\Ui\\\\WebmailAccess") ? 0 : 1);'])]
+                probes = [('nginx-mailcow', 'nginx configuration', ['nginx', '-t']),
+                          ('php-fpm-mailcow', 'PHP autoload', ['php', '-r', 'require "/web/inc/lib/vendor/autoload.php"; exit(!is_file("/web/inc/lib/mailcow/Ui/WebmailAccess.php") || class_exists("Mailcow\\\\Ui\\\\WebmailAccess") ? 0 : 1);'])]
                 if 'nginx-mailcow' in expected:
-                    probes.append(('nginx-mailcow', ['sh', '-ec', 'wget -q -T 10 -O - http://127.0.0.1:65510/ | grep -q \'name="login_user"\'']))
-                if 'roundcube-mailcow' in expected: probes.append(('roundcube-mailcow', ['php', '/var/www/html/healthcheck.php']))
+                    probes.append(('nginx-mailcow', 'portal login page', ['sh', '-ec', 'wget -q -T 10 -O - http://127.0.0.1:65510/ | grep -q \'name="login_user"\'']))
+                if 'roundcube-mailcow' in expected: probes.append(('roundcube-mailcow', 'Roundcube database', ['php', '/var/www/html/healthcheck.php']))
                 if 'sogo-mailcow' in expected:
-                    probes.append(('php-fpm-mailcow', ['php', '-r',
+                    probes.append(('php-fpm-mailcow', 'SOGo HTTP readiness', ['php', '-r',
                         '$body=@file_get_contents("http://sogo-mailcow:20000/SOGo.index/",false,stream_context_create(["http"=>["timeout"=>5,"ignore_errors"=>true]])); '
                         'exit($body!==false && preg_match("#^HTTP/[0-9.]+ [23][0-9]{2}#",$http_response_header[0]??"") ? 0 : 1);']))
-                if 'postfix-mailcow' in expected: probes.append(('postfix-mailcow', ['postfix', 'status']))
-                if 'dovecot-mailcow' in expected: probes.append(('dovecot-mailcow', ['doveadm', 'service', 'status', 'imap-login']))
+                if 'postfix-mailcow' in expected: probes.append(('postfix-mailcow', 'Postfix running', ['postfix', 'status']))
+                if 'dovecot-mailcow' in expected: probes.append(('dovecot-mailcow', 'Dovecot IMAP', ['doveadm', 'service', 'status', 'imap-login']))
                 try:
-                    for name, command in probes:
-                        if name in expected: self.compose('exec', '-T', name, *command)
+                    for name, label, command in probes:
+                        if name not in expected: continue
+                        try: self.compose('exec', '-T', name, *command)
+                        except UpgradeError as error:
+                            raise UpgradeError(name + ' (' + label + '): ' + str(error)) from error
                     return
                 except UpgradeError as error: last = str(error)
+            if last != reported:
+                self.log('Waiting for readiness: ' + last)
+                reported = last
             time.sleep(2)
         raise UpgradeError('Health checks failed: ' + last)
 
@@ -698,8 +735,11 @@ class Engine:
             self.job['committed'] = True; atomic_json(self.journal, self.job)
             firewall.release()
             self.phase('complete', f'Upgraded to {commit[:12]} with {client}. Verified backup retained.')
-        except BaseException:
+        except BaseException as error:
             try:
+                # Persist the original phase/cause before restore() replaces the public status.
+                try: self.retain_failure(error)
+                except Exception as diagnostic_error: self.log('Could not retain failure details: ' + str(diagnostic_error))
                 self.env = old_env
                 if self.job.get('guarded'): self.restore()
                 else: self.phase('failed', 'Upgrade stopped before changing the running stack; inspect the worker log.')

@@ -10,6 +10,7 @@ from pathlib import Path
 import shutil
 import signal
 import subprocess
+import sys
 import tarfile
 import tempfile
 import unittest
@@ -358,6 +359,9 @@ class TransactionTests(unittest.TestCase):
                 self.assertEqual(self.volume.read_text(), 'old mail')
                 self.assertFalse(Guard.active)
                 self.assertEqual(git(self.target, 'rev-parse', 'HEAD'), self.old)
+                self.assertEqual(engine.job['failure']['phase'], 'applying' if failure == 'start' else 'health_check')
+                self.assertIn('Injected', engine.public_status()['message'])
+                self.assertEqual(json.loads(engine.journal.read_text())['failure'], engine.job['failure'])
 
     def test_failed_recovery_keeps_traffic_blocked(self):
         engine = self.engine('rollback-health')
@@ -414,6 +418,63 @@ class StopTests(unittest.TestCase):
         engine = self.Stopper({'dovecot-mailcow': 137, 'redis-mailcow': 0})
         engine.stop_all(strict=False)
         self.assertEqual(len(engine.stopped), 2)
+
+
+class DiagnosticTests(unittest.TestCase):
+    def test_stdout_only_command_failure_is_not_discarded(self):
+        with self.assertRaisesRegex(worker.UpgradeError, 'database readiness failed'):
+            worker.execute([sys.executable, '-c', 'print("database readiness failed"); raise SystemExit(1)'])
+
+    def test_stdout_failure_redacts_environment_secrets(self):
+        password = 'fixture-database-password'
+        with self.assertRaises(worker.UpgradeError) as failure:
+            worker.execute([sys.executable, '-c', 'import os; print(os.environ["DBPASS"]); raise SystemExit(1)'],
+                           env=dict(os.environ, DBPASS=password))
+        self.assertNotIn(password, str(failure.exception))
+        self.assertIn('[REDACTED]', str(failure.exception))
+
+    def test_each_failed_health_probe_names_its_service_and_check(self):
+        services = ['nginx-mailcow', 'php-fpm-mailcow', 'roundcube-mailcow', 'postfix-mailcow', 'dovecot-mailcow']
+        containers = [{'Id': name, 'Config': {'Labels': {'com.docker.compose.service': name}}, 'State': {'Running': True}} for name in services]
+        cases = [('nginx-mailcow', 'nginx', 'nginx configuration'),
+                 ('php-fpm-mailcow', 'php', 'PHP autoload'),
+                 ('nginx-mailcow', 'sh', 'portal login page'),
+                 ('roundcube-mailcow', 'php', 'Roundcube database'),
+                 ('postfix-mailcow', 'postfix', 'Postfix running'),
+                 ('dovecot-mailcow', 'doveadm', 'Dovecot IMAP')]
+        for service, executable, label in cases:
+            with self.subTest(probe=label):
+                engine = worker.Engine({'target': tempfile.gettempdir(), 'health_timeout': 1})
+                def compose(*arguments):
+                    if arguments[2:4] == (service, executable): raise worker.UpgradeError('docker exited 1: no error details returned')
+                    return ''
+                with patch.object(engine, 'inspect_project', return_value=containers), patch.object(engine, 'compose', side_effect=compose), \
+                     patch.object(worker.time, 'monotonic', side_effect=[0, 0, 1]), patch.object(worker.time, 'sleep'):
+                    with self.assertRaises(worker.UpgradeError) as failure: engine.health(set(services))
+                self.assertIn(service + ' (' + label + ')', str(failure.exception))
+
+    def test_candidate_logs_and_failure_survive_rollback_status_without_secrets(self):
+        with tempfile.TemporaryDirectory(prefix='upgrade-diagnostics-') as directory:
+            folder = Path(directory); backup = folder / 'backup'; backup.mkdir()
+            password = 'fixture-database-password'
+            result = subprocess.CompletedProcess([], 0, 'stdout '+password, 'stderr '+password)
+            engine = worker.Engine({'target': directory, 'state_dir': str(folder/'state')}, runner=lambda *args, **kwargs: result)
+            engine.env = dict(DBPASS=password)
+            engine.job = {'id': 'fixture', 'phase': 'health_check', 'message': 'Checking readiness.', 'guarded': True, 'backup': str(backup)}
+            containers = [{'Id': 'fixture-id', 'Config': {'Labels': {'com.docker.compose.service': 'nginx-mailcow'},
+                           'Env': ['DBPASS='+password]}, 'State': {'Running': True}}]
+            with patch.object(engine, 'inspect_project', return_value=containers):
+                engine.retain_failure(worker.UpgradeError('nginx-mailcow probe failed: '+password))
+            self.assertEqual(json.loads(engine.journal.read_text())['failure']['phase'], 'health_check')
+            saved = (backup/'failure-diagnostics.json').read_text()
+            self.assertNotIn(password, saved)
+            self.assertNotIn('DBPASS=', saved)
+            self.assertIn('stdout [REDACTED]', saved)
+            self.assertIn('stderr [REDACTED]', saved)
+            engine.phase('rolled_back', 'Previous stack recovered.')
+            public = engine.public_status()
+            self.assertIn('nginx-mailcow probe failed', public['message'])
+            self.assertNotIn(password, json.dumps(public))
 
 
 class FirewallTests(unittest.TestCase):
