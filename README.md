@@ -183,6 +183,9 @@ If an update rolls back, the overview reports the original failing stage and
 readiness probe. The private transaction journal retains the error, and the backup
 contains `failure-diagnostics.json` with bounded, redacted candidate-container logs
 captured before recovery replaces those containers. Existing backups remain intact.
+The worker keeps its private umask for backups and state, and uses a separate
+service-readable umask for Git checkout so replaced PHP/static files remain readable
+by the containers.
 
 ```sh
 sudo journalctl -u mailcow-simplified-updates.service -n 100

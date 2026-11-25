@@ -184,6 +184,24 @@ class TransactionTests(unittest.TestCase):
         self.assertIn('COMPOSE_PROFILES=sogo', (self.target / 'mailcow.conf').read_text())
         self.assertIn('SKIP_SOGO=n', (self.target / 'mailcow.conf').read_text())
 
+    def test_private_daemon_umask_does_not_make_deployed_code_unreadable(self):
+        added = 'data/web/inc/new-component/fixture.php'
+        (self.source / added).parent.mkdir(parents=True)
+        (self.source / added).write_text('<?php echo "ready";')
+        git(self.source, 'add', added); git(self.source, 'commit', '-qm', 'New PHP component')
+        previous = os.umask(0o077)
+        try:
+            engine = self.engine(); engine.upgrade(self.source)
+            self.assertEqual((self.target / 'application.txt').stat().st_mode & 0o777, 0o644)
+            self.assertEqual((self.target / added).stat().st_mode & 0o777, 0o644)
+            self.assertEqual((self.target / added).parent.stat().st_mode & 0o777, 0o755)
+            self.assertEqual(engine.journal.stat().st_mode & 0o077, 0)
+            self.assertEqual((Path(engine.job['backup']) / 'images.tar').stat().st_mode & 0o077, 0)
+            current = os.umask(0o077)
+            self.assertEqual(current, 0o077, 'Only the Git child process may relax its umask')
+        finally:
+            os.umask(previous)
+
     def test_regress_sogo_is_a_forward_upgrade_without_deleting_data(self):
         content = (self.target / 'mailcow.conf').read_text().replace('WEBMAIL_CLIENT=sogo', 'WEBMAIL_CLIENT=roundcube')
         (self.target / 'mailcow.conf').write_text(content)

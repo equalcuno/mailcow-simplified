@@ -99,18 +99,18 @@ def recovery_signals(operation):
     return protected
 
 
-def execute(arguments, cwd=None, env=None, timeout=3600, allow_failure=False, stream=False, redact=(), progress_label=None):
+def execute(arguments, cwd=None, env=None, timeout=3600, allow_failure=False, stream=False, redact=(), progress_label=None, umask=-1):
     command = str(arguments[0]) + (' ' + str(arguments[1]) if arguments[0] == 'git' and len(arguments) > 1 else '')
     hidden = (*secret_values(env), *redact)
     if not stream:
-        result = subprocess.run(arguments, cwd=cwd, env=env, text=True, capture_output=True, timeout=timeout)
+        result = subprocess.run(arguments, cwd=cwd, env=env, text=True, capture_output=True, timeout=timeout, umask=umask)
     else:
         # Queries stay captured for JSON/numeric parsers. Only human-readable
         # operations opt in here; archive bytes always go to their output file.
         started, heartbeat = time.monotonic(), time.monotonic()
         tail, pending = '', ''
         decoder = codecs.getincrementaldecoder('utf-8')(errors='replace')
-        process = subprocess.Popen(arguments, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        process = subprocess.Popen(arguments, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, umask=umask)
         try:
             with selectors.DefaultSelector() as selector:
                 selector.register(process.stdout, selectors.EVENT_READ)
@@ -200,6 +200,10 @@ class Engine:
 
     def command(self, *arguments, progress=None, **kwargs):
         kwargs.setdefault('timeout', int(self.config.get('command_timeout', 3600)))
+        if arguments[:2] == ('git', 'checkout'):
+            # The daemon keeps backups/state private with umask 0077. Checked-out
+            # application files must retain Git's normal service-readable modes.
+            kwargs.setdefault('umask', 0o022)
         if progress:
             self.log(progress + '…')
             kwargs.update(stream=True, progress_label=progress)
