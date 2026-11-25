@@ -4026,6 +4026,45 @@ security:
   - ApiKeyAuth: []
 
 paths:
+  /api/v1/get/overview/server:
+    get:
+      tags: [Status]
+      summary: Read live host measurements and service status
+      operationId: getOverviewServer
+      description: >-
+        Administrator-only lightweight polling endpoint. Returns kernel CPU, RAM,
+        memory pressure and uptime measurements, mail filesystem usage cached for
+        30 seconds, and container running/health status. Does not query mailbox
+        inventory or scan retained mail logs. Missing or stale host measurements
+        are explicitly unavailable. Suitable for polling every five seconds.
+      responses:
+        "200":
+          description: Current host and service measurements
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [generated_at, server, services]
+                properties:
+                  generated_at: {type: integer}
+                  server:
+                    type: object
+                    properties:
+                      available: {type: boolean}
+                      sampled_at: {type: number}
+                      cpu: {type: object}
+                      memory: {type: object}
+                      memory_pressure: {type: [object, "null"]}
+                      storage: {type: object}
+                      uptime: {type: number}
+                  services:
+                    type: [array, "null"]
+                    items:
+                      type: object
+                      properties:
+                        name: {type: string}
+                        running: {type: boolean}
+                        health: {type: [string, "null"]}
   /api/v1/get/overview:
     get:
       tags: [Status]

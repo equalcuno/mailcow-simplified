@@ -24,3 +24,12 @@ html:has(#dark-mode-theme) .p-preferences :is(small, legend, footer span, .p-pre
 .p-ui-settings { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 48px; }
 .p-ui-settings .p-branding-settings { margin: 0; padding: 0 0 0 32px; border-top: 0; border-left: 1px solid #dce1e6; }
 @media (max-width: 800px) { .p-ui-settings { grid-template-columns: 1fr; gap: 28px; padding: 20px; } .p-ui-settings .p-branding-settings { border-left: 0; border-top: 1px solid #dce1e6; padding: 24px 0 0; } }
+/* Shared with the standalone preferences dialog, which can open in Classic. */
+html:has(#dark-mode-theme) .p-preferences label { border-color: #344251; }
+html:has(#dark-mode-theme) .p-preferences label:has(input:checked) { border-color: #91adff; }
+html:has(#dark-mode-theme) .p-branding-settings { border-color: #344251; }
+html:has(#dark-mode-theme) .p-branding-settings > p { color: #a9b4c0; }
+html:has(#dark-mode-theme) .p-branding-settings input { color: #edf1f5; background-color: #111922; border-color: #344251; color-scheme: dark; }
+.p-branding-settings input::file-selector-button { border: 1px solid #dce1e6; border-radius: 4px; padding: 6px 10px; margin-right: 10px; background: #e8ecef; color: #17212b; font: inherit; cursor: pointer; }
+html:has(#dark-mode-theme) .p-branding-settings input::file-selector-button { background: #25323f; border-color: #344251; color: #edf1f5; }
+html:has(#dark-mode-theme) .p-branding-settings input::file-selector-button:hover { background: #25395e; }

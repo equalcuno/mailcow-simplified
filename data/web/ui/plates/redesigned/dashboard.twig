@@ -2,17 +2,19 @@
 {% block content %}
 <section class="p-overview" data-p-overview>
   <header class="p-workspace-heading"><div><p class="p-kicker">{{ hostname }}</p><h1>{{ plates.text.overview }}</h1><p>{{ plates.text.overview_activity_hint }}</p></div><button class="btn btn-secondary p-button" type="button" data-p-overview-refresh><i class="bi bi-arrow-clockwise" aria-hidden="true"></i>{{ plates.text.refresh }}</button></header>
+  <div class="p-live-status"><span class="p-status p-status-pending" data-p-live-status role="status">Connecting to live stats…</span><small data-p-live-updated>Server resources refresh every 5 seconds.</small></div>
   <p class="p-coverage" data-p-coverage aria-live="polite">{{ plates.text.loading }}</p>
   <div class="p-server-grid" aria-label="Server resources">
-    <article class="p-metric"><span>CPU usage</span><strong data-p-host="cpu">—</strong><small data-p-host="cores">Waiting for host telemetry</small></article>
-    <article class="p-metric"><span>Memory usage</span><strong data-p-host="memory">—</strong><small data-p-host="memory_available">Available / total</small></article>
-    <article class="p-metric"><span>Memory pressure</span><strong data-p-host="pressure">—</strong><small>Linux PSI · time stalled over 10 seconds</small></article>
-    <article class="p-metric"><span>Mail filesystem</span><strong data-p-host="storage">—</strong><small data-p-host="storage_available">Available / total</small></article>
+    <article class="p-metric"><span>CPU usage</span><strong data-p-host="cpu">—</strong><small data-p-host="cores">Waiting for host telemetry</small><div class="p-host-chart" data-p-host-chart="cpu" role="img" aria-label="CPU usage history"><span>Collecting live history…</span></div></article>
+    <article class="p-metric"><span>Memory usage</span><strong data-p-host="memory">—</strong><small data-p-host="memory_available">Available / total</small><div class="p-host-chart" data-p-host-chart="memory" role="img" aria-label="Memory usage history"><span>Collecting live history…</span></div></article>
+    <article class="p-metric"><span>Memory pressure</span><strong data-p-host="pressure">—</strong><small>Linux PSI · time stalled over 10 seconds</small><div class="p-host-chart" data-p-host-chart="pressure" role="img" aria-label="Memory pressure history"><span>Collecting live history…</span></div></article>
+    <article class="p-metric"><span>Mail filesystem</span><strong data-p-host="storage">—</strong><small data-p-host="storage_available">Available / total</small><div class="p-host-chart" data-p-host-chart="storage" role="img" aria-label="Mail filesystem usage history"><span>Collecting live history…</span></div></article>
     <article class="p-metric"><span>Average send time</span><strong data-p-timing="average_send_seconds">—</strong><small data-p-timing-samples="send_samples">Queue to successful recipient delivery</small></article>
     <article class="p-metric"><span>Average SMTP transfer / response</span><strong data-p-timing="average_smtp_response_seconds">—</strong><small data-p-timing-samples="smtp_response_samples">Successful outbound deliveries</small></article>
-    <article class="p-metric"><span>Overview response</span><strong data-p-api-time>—</strong><small>Browser-to-server request duration</small></article>
+    <article class="p-metric"><span>Stats response</span><strong data-p-api-time>—</strong><small>Browser-to-server request duration</small></article>
     <article class="p-metric"><span>Host uptime</span><strong data-p-host="uptime">—</strong><small>Docker host kernel</small></article>
   </div>
+  <p class="p-live-footnote" data-p-live-history>Graphs show up to 5 minutes of measured history while this page is open. Mail filesystem checks refresh every 30 seconds; mail activity refreshes every minute. Updates pause in hidden tabs.</p>
   <section class="p-insight p-update-panel" data-p-updates>
     <header><div><h2>Server updates</h2><p>Verified backup, maintenance window, health checks and automatic recovery before reopening mail access.</p></div><button class="btn btn-primary p-button" type="button" data-p-server-update disabled><i class="bi bi-arrow-up-circle" aria-hidden="true"></i>Update server</button></header>
     <p data-p-update-status role="status">Checking update service…</p>
@@ -29,7 +31,7 @@
     <section class="p-insight"><header><div><h2>{{ plates.text.top_sending_domains }}</h2><p>{{ plates.text.sender_hint }}</p></div></header><ol class="p-domain-ranking" data-p-ranking="top_sending_domains"></ol></section>
     <section class="p-insight"><header><div><h2>{{ plates.text.top_recipient_domains }}</h2><p>{{ plates.text.recipient_hint }}</p></div></header><ol class="p-domain-ranking" data-p-ranking="top_recipient_domains"></ol></section>
     <section class="p-insight"><header><div><h2>{{ plates.text.top_local_domains }}</h2><p>{{ plates.text.local_hint }}</p></div></header><ol class="p-domain-ranking" data-p-ranking="top_local_domains"></ol></section>
-    <section class="p-insight"><header><h2>{{ plates.text.service_health }}</h2></header><ul class="p-services">{% for name, container in containers %}<li><span>{{ name }}</span><span class="p-status {{ container.State.Running ? 'p-status-active' : 'p-status-inactive' }}">{{ container.State.Running ? plates.text.running : plates.text.stopped }}</span></li>{% else %}<li>{{ plates.text.no_service_data }}</li>{% endfor %}</ul></section>
+    <section class="p-insight"><header><h2>{{ plates.text.service_health }}</h2></header><ul class="p-services" data-p-services>{% for name, container in containers %}<li><span>{{ name }}</span><span class="p-status {{ container.State.Running ? 'p-status-active' : 'p-status-inactive' }}">{{ container.State.Running ? plates.text.running : plates.text.stopped }}</span></li>{% else %}<li>{{ plates.text.no_service_data }}</li>{% endfor %}</ul></section>
   </div>
   <p class="p-metric-footnote">{{ plates.text.metric_caveat }}</p>
 </section>

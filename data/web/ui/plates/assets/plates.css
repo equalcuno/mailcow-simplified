@@ -24,8 +24,10 @@
   --mc-body-bg: var(--p-chalk);
   --mc-surface: var(--p-paper);
   --mc-surface-alt: var(--p-wash);
-  --mc-primary: var(--p-blue);
-  --mc-primary-border: var(--p-blue-deep);
+  --mc-primary: #1f4fd8;
+  --mc-primary-border: #173eae;
+  --mc-info: var(--p-blue-tint);
+  --mc-info-border: var(--p-line);
   --mc-border: var(--p-line);
   --mc-muted: var(--p-steel);
   --mc-font-family: 'Plates Text', sans-serif;
@@ -58,7 +60,43 @@ html:has(#dark-mode-theme) .plates-ui {
   --p-yellow-tint: #43391f;
   --p-red: #ffaaa2;
   --p-red-tint: #482a2c;
+  /* Upstream dark controls use these tokens, including !important rules. */
+  --mc-body-color: var(--p-iron);
+  --mc-text: var(--p-iron);
+  --mc-text-soft: var(--p-steel);
+  --mc-btn-bg: var(--p-wash);
+  --mc-btn-border: var(--p-line);
+  --mc-input-bg: var(--p-chalk);
+  --mc-input-color: var(--p-iron);
+  --mc-input-border: var(--p-line);
+  --mc-input-disabled-bg: var(--p-wash);
+  --mc-input-disabled-color: var(--p-steel);
+  --mc-dropdown-bg: var(--p-paper);
+  --mc-table-bg: var(--p-paper);
+  --mc-table-stripe: var(--p-wash);
+  --mc-table-stripe-row: var(--p-wash);
+  --mc-table-hover: var(--p-blue-tint);
+  --mc-table-border: var(--p-line);
+  --mc-table-child-bg: var(--p-wash);
+  --mc-progress-bg: var(--p-wash);
+  --mc-placeholder: var(--p-steel);
+  --mc-link: var(--p-blue);
+  --mc-link-hover: var(--p-blue-deep);
+  --mc-tab-border: var(--p-line);
+  --mc-btn-outline-color: var(--p-iron);
+  --mc-btn-outline-border: var(--p-line);
+  --mc-btn-outline-hover-bg: var(--p-wash);
+  --mc-btn-outline-active-bg: var(--p-blue-tint);
+  --mc-list-header-bg: var(--p-wash);
+  --mc-list-details-bg: var(--p-paper);
+  --mc-chip-bg: var(--p-wash);
+  --mc-dtr-bg: var(--p-wash);
+  --mc-dtr-border: var(--p-line);
+  --mc-dtr-color: var(--p-iron);
+  --mc-dtr-hover-bg: var(--p-blue-tint);
+  --mc-dtr-active-bg: var(--p-blue-tint);
 }
+html:has(#dark-mode-theme) .plates-ui .page-item.active .page-link { background-color: #1f4fd8 !important; border-color: #1f4fd8 !important; color: #fff !important; }
 
 .plates-ui a { text-underline-offset: 3px; }
 .plates-ui :is(a, button, input, select, textarea, summary):focus-visible { outline: 2px solid var(--p-blue); outline-offset: 3px; box-shadow: none; }
@@ -147,8 +185,9 @@ html:has(#dark-mode-theme) .plates-ui {
 .plates-ui .control-label, .plates-ui .form-label { font-size: 13px; font-weight: 500; padding-top: 8px; }
 .plates-ui .form-check-input { border-color: var(--p-steel); }
 .plates-ui .form-check-input:checked { background-color: #1f4fd8; border-color: #1f4fd8; }
-.plates-ui .dropdown-menu { --bs-dropdown-bg: var(--p-paper); --bs-dropdown-color: var(--p-iron); --bs-dropdown-link-color: var(--p-iron); --bs-dropdown-link-hover-bg: var(--p-wash); --bs-dropdown-link-hover-color: var(--p-iron); --bs-dropdown-link-active-bg: #1f4fd8; --bs-dropdown-link-active-color: #fff; --bs-dropdown-border-color: var(--p-line); padding: 8px; border-radius: 8px; box-shadow: none; }
+.plates-ui .dropdown-menu { --bs-dropdown-bg: var(--p-paper); --bs-dropdown-color: var(--p-iron); --bs-dropdown-link-color: var(--p-iron); --bs-dropdown-link-hover-bg: var(--p-wash); --bs-dropdown-link-hover-color: var(--p-iron); --bs-dropdown-link-active-bg: #1f4fd8; --bs-dropdown-link-active-color: #fff; --bs-dropdown-border-color: var(--p-line); background-color: var(--p-paper); border-color: var(--p-line); padding: 8px; border-radius: 8px; box-shadow: none; }
 .plates-ui .dropdown-item { padding: 9px 12px; border-radius: 5px; font-size: 13px; }
+.plates-ui .dropdown-menu .dropdown-item:is(:hover, :focus) { color: var(--p-iron) !important; background-color: var(--p-wash); }
 .plates-ui .dropdown-header { color: var(--p-steel); }
 .plates-ui .nav-tabs { gap: 4px; border-bottom: 1px solid var(--p-line); padding-bottom: 8px; }
 .plates-ui .nav-tabs .nav-link { color: var(--p-steel); border: 0; border-radius: 8px; padding: 10px 14px; font-size: 13px; }

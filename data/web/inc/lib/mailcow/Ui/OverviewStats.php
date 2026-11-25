@@ -66,6 +66,45 @@ final class OverviewStats {
     ];
   }
 
+  /** Lightweight polling path: no mailbox SQL queries or retained-mail log scan. */
+  public static function serverSnapshot(object $redis, string $role, int $now, ?callable $dockerCall = null): array {
+    if ($role !== 'admin') throw new \RuntimeException('Administrator access required');
+    $server = ['available' => false]; $services = null;
+    $call = $dockerCall ?? (function_exists('docker') ? '\\docker' : null);
+    if ($call) {
+      try {
+        $host = $call('host_stats');
+        $sampled = is_array($host) && is_numeric($host['sampled_at'] ?? null) ? (float)$host['sampled_at'] : $now;
+        if (is_array($host) && isset($host['cpu'], $host['memory']) && $sampled >= $now - 20 && $sampled <= $now + 5) {
+          $server = $host + ['available' => true, 'source' => 'docker_host_kernel', 'sampled_at' => $sampled];
+        }
+      } catch (\Throwable $e) {}
+      try {
+        $storage = json_decode($redis->get('UI_OVERVIEW_STORAGE') ?: '', true);
+        if (!is_array($storage) || (int)($storage['sampled_at'] ?? 0) < $now - 30) {
+          $storage = json_decode((string)$call('post', 'dovecot-mailcow', 'exec', ['cmd' => 'system', 'task' => 'storage']), true);
+          if (is_array($storage) && isset($storage['total_bytes'], $storage['available_bytes'])) {
+            $storage['sampled_at'] = $now;
+            try { $redis->setex('UI_OVERVIEW_STORAGE', 30, json_encode($storage)); } catch (\Throwable $e) {}
+          }
+        }
+        if (is_array($storage) && isset($storage['total_bytes'], $storage['available_bytes'])) $server['storage'] = $storage;
+      } catch (\Throwable $e) {}
+      try {
+        $containers = $call('containers');
+        if (is_array($containers)) {
+          $services = [];
+          foreach ($containers as $name => $container) {
+            $state = $container['State'] ?? [];
+            $services[] = ['name' => (string)$name, 'running' => !empty($state['Running']),
+                           'health' => $state['Health']['Status'] ?? null];
+          }
+        }
+      } catch (\Throwable $e) {}
+    }
+    return ['generated_at' => $now, 'server' => $server, 'services' => $services];
+  }
+
   public static function snapshot(object $redis, \PDO $pdo, string $role, int $now): array {
     if ($role !== 'admin') throw new \RuntimeException('Administrator access required');
     $lines = $redis->lRange('POSTFIX_MAILLOG', 0, 19999);
@@ -77,19 +116,9 @@ final class OverviewStats {
     $mailboxes = $pdo->query("SELECT COUNT(*) AS total, COALESCE(SUM(active),0) AS active, COALESCE(SUM(quota),0) AS allocated FROM mailbox WHERE kind = '' OR kind IS NULL")->fetch(\PDO::FETCH_ASSOC);
     $storage = $pdo->query("SELECT COALESCE(SUM(q.bytes),0) AS used, COALESCE(SUM(q.messages),0) AS messages FROM quota2 AS q INNER JOIN mailbox AS m ON m.username = q.username WHERE m.kind = '' OR m.kind IS NULL")->fetch(\PDO::FETCH_ASSOC);
     $snapshot['inventory'] = ['domains' => (int)$domains['total'], 'active_domains' => (int)$domains['active'], 'mailboxes' => (int)$mailboxes['total'], 'active_mailboxes' => (int)$mailboxes['active'], 'allocated_bytes' => (int)$mailboxes['allocated'], 'used_bytes' => (int)$storage['used'], 'stored_messages' => (int)$storage['messages']];
-    $snapshot['server'] = ['available' => false];
-    try {
-      if (function_exists('docker')) {
-        $host = \docker('host_stats');
-        if (is_array($host) && isset($host['cpu'], $host['memory'])) {
-          $snapshot['server'] = $host + ['available' => true, 'source' => 'docker_host_kernel'];
-        }
-        $disk = json_decode((string)\docker('post', 'dovecot-mailcow', 'exec', ['cmd' => 'system', 'task' => 'storage']), true);
-        if (is_array($disk) && isset($disk['total_bytes'], $disk['available_bytes'])) $snapshot['server']['storage'] = $disk;
-      }
-    } catch (\Throwable $e) {
-      // Mail metrics remain useful when host telemetry is temporarily unavailable.
-    }
+    $live = self::serverSnapshot($redis, $role, $now);
+    $snapshot['server'] = $live['server'];
+    $snapshot['services'] = $live['services'];
     return $snapshot;
   }
 }

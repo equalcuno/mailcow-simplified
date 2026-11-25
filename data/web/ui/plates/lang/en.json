@@ -125,5 +125,5 @@
   "no_service_data": "No service information available.",
   "no_activity": "No activity in the retained sample.",
   "coverage": "Retained log sample",
-  "metric_caveat": "Activity uses retained Postfix logs, capped at 20,000 entries and filtered to the last 24 hours. Retention can cover less time. Queue IDs count messages; deliveries and failures count recipient attempts. Local deliveries can include internal mail. Service health is captured when the page loads."
+  "metric_caveat": "Activity uses retained Postfix logs, capped at 20,000 entries and filtered to the last 24 hours. Retention can cover less time. Queue IDs count messages; deliveries and failures count recipient attempts. Local deliveries can include internal mail. Service health refreshes every five seconds while this tab is visible."
 }

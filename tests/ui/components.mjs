@@ -20,6 +20,16 @@ async function open(name, path, options = {}) {
   const requests = [], errors = [];
   const batchResponse = options.batchResponse;
   const setupResponse = options.setupResponse;
+  const serverResponse = options.serverResponse;
+  const timers = new Map(); let timerId = -1;
+  if (options.controlTimers) {
+    const nativeTimeout = window.setTimeout.bind(window), nativeClear = window.clearTimeout.bind(window);
+    window.setTimeout = (callback, delay, ...args) => {
+      if ([5000, 60000].includes(delay)) { const id = timerId--; timers.set(id, { callback, delay, args }); return id; }
+      return nativeTimeout(callback, delay, ...args);
+    };
+    window.clearTimeout = id => { timers.delete(id); nativeClear(id); };
+  }
   for (const [key, value] of Object.entries(options.storage || {})) window.localStorage.setItem(key, value);
   window.csrf_token = 'fixture-csrf-token';
   let updateBusy = false;
@@ -36,7 +46,12 @@ async function open(name, path, options = {}) {
       const domain = new URL(url, window.location.href).searchParams.get('domain');
       return setupResponse ? setupResponse(url, domain) : { ok: true, json: async () => ({ domain, enabled: true, ready: false, required: 1, complete: 0, checked_at: 123, records: [{ name: domain, type: 'MX', expected: 'mail.example.org', current: [], required: true, status: 'missing' }] }) };
     }
-    if (url === '/api/v1/get/overview') return { ok: true, json: async () => JSON.parse(await readFile(join(output, 'overview.json'), 'utf8')) };
+    if (url === '/api/v1/get/overview/server' && serverResponse) return serverResponse();
+    if (url === '/api/v1/get/overview' || url === '/api/v1/get/overview/server') return { ok: true, json: async () => {
+      const data = JSON.parse(await readFile(join(output, 'overview.json'), 'utf8'));
+      data.generated_at = Math.floor(Date.now() / 1000); data.server.sampled_at = Date.now() / 1000;
+      return data;
+    } };
     let data = [];
     const body = JSON.parse(options.body || '{}');
     if (url.endsWith('/domain')) data = { recordsFiltered: 1, data: [{ domain_name: 'example.org', domain_h_name: 'example.org', description: 'Business mail', active: 1, mboxes_in_domain: 2, quota_used_in_domain: '2 GiB' }] };
@@ -56,7 +71,11 @@ async function open(name, path, options = {}) {
   window.eval(await file('data/web/ui/plates/assets/components.js'));
   window.document.dispatchEvent(new window.Event('DOMContentLoaded'));
   await pause(); await pause();
-  return { window, document: window.document, requests, errors, setAliases: value => { aliasData = value; } };
+  return { window, document: window.document, requests, errors, setAliases: value => { aliasData = value; }, timers, runTimer: async delay => {
+    const entry = [...timers].find(([, timer]) => timer.delay === delay);
+    assert.ok(entry, 'Expected scheduled timer ' + delay);
+    timers.delete(entry[0]); await entry[1].callback(...entry[1].args); await pause();
+  } };
 }
 
 const mail = await open('admin', '/admin/mailbox#tab-mailboxes');
@@ -79,6 +98,13 @@ try {
   check(!document.getElementById('p-create-mailbox').open, 'Focused form closes');
   document.querySelector('.plates-rail [data-plates-tab="tab-domains"]').click(); await pause();
   check(document.querySelector('[data-p-title]').textContent === 'Domains', 'Sidebar switches redesigned views without a document reload');
+  check(document.querySelector('.p-row-actions .p-domain-setup-link + .p-row-open'), 'DNS button sits beside the edit arrow');
+  const icon = document.querySelector('.p-row-icon img');
+  check(icon.src === 'https://example.org/favicon.svg' && icon.referrerPolicy === 'no-referrer', 'Domain SVG favicon loads without a referrer');
+  icon.dispatchEvent(new window.Event('error'));
+  check(icon.src === 'https://example.org/favicon.ico', 'Missing SVG falls back to the domain favicon');
+  icon.dispatchEvent(new window.Event('error')); icon.dispatchEvent(new window.Event('error'));
+  check(!document.querySelector('.p-row-icon img') && document.querySelector('.p-row-icon i'), 'Missing favicons retain the globe');
   document.querySelector('.p-domain-count').click(); await pause();
   check(document.querySelector('[data-p-title]').textContent === 'Mailboxes' && JSON.parse(requests.at(-1).options.body).domain === 'example.org', 'Domain rows lead to their mailbox scope');
   window.history.back(); await pause();
@@ -245,6 +271,40 @@ try {
   check(update.disabled && document.querySelector('[data-p-update-status]').textContent === 'Update queued', 'Queued upgrade disables duplicate submission');
   check(errors.length === 0, 'Overview rendering has no script errors: ' + errors.join(', '));
 } finally { await dashboard.window.happyDOM.close(); }
+
+let sampleTime = Date.now() / 1000, failLive = false, holdLive = null;
+const liveDashboard = await open('dashboard', '/admin/dashboard', { controlTimers: true, serverResponse: async () => {
+  if (holdLive) await holdLive;
+  if (failLive) throw new Error('Disconnected');
+  sampleTime += 5;
+  return { ok: true, json: async () => ({ generated_at: sampleTime, server: { available: true, sampled_at: sampleTime, cpu: { usage: 42, cores: 4 }, memory: { usage: 50 }, memory_pressure: { some: { avg10: .2 } }, storage: { usage_percent: 29 } }, services: [{ name: 'postfix-mailcow', running: false }] }) };
+} });
+try {
+  const { document, window, requests, runTimer, timers } = liveDashboard;
+  await runTimer(5000);
+  check(document.querySelector('[data-p-host="cpu"]').textContent === '42.0%' && document.querySelector('[data-p-services]').textContent.includes('Stopped'), 'Live polling updates host measurements and service status');
+  check(document.querySelector('[data-p-host-chart="cpu"] path[stroke]'), 'Graphs connect measured host samples');
+  check(requests.filter(r => r.url === '/api/v1/get/overview').length === 1, 'Five-second polls do not rescan mail activity');
+  let hidden = true;
+  Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden });
+  document.dispatchEvent(new window.Event('visibilitychange'));
+  check(![...timers.values()].some(timer => timer.delay === 60000 || timer.delay === 5000) && document.querySelector('[data-p-live-status]').textContent === 'Paused', 'Hidden tabs pause telemetry and mail polling');
+  hidden = false; document.dispatchEvent(new window.Event('visibilitychange')); await pause();
+  check(document.querySelector('[data-p-live-status]').textContent.includes('Live'), 'Visible tabs resume live telemetry');
+  failLive = true; await runTimer(5000);
+  check(document.querySelector('[data-p-live-status]').textContent.includes('Reconnecting') && document.querySelector('[data-p-host="cpu"]').textContent === '—', 'Disconnected stats show reconnecting and no stale current values');
+  check(document.querySelector('[data-p-host-chart="cpu"] path[stroke]'), 'Reconnect preserves measured chart history');
+  failLive = false; await runTimer(5000);
+  check(document.querySelector('[data-p-live-status]').textContent.includes('Live'), 'Retry recovers live status');
+  let release;
+  holdLive = new Promise(resolve => { release = resolve; });
+  const pending = runTimer(5000); await pause();
+  const before = requests.filter(r => r.url.endsWith('/overview/server')).length;
+  document.dispatchEvent(new window.Event('visibilitychange')); await pause();
+  check(requests.filter(r => r.url.endsWith('/overview/server')).length === before, 'Slow live requests never overlap');
+  release(); await pending;
+  check(liveDashboard.errors.length === 0, 'Live polling has no script errors');
+} finally { await liveDashboard.window.happyDOM.close(); }
 
 const edit = await open('edit', '/edit/mailbox/alex%40example.org');
 try {

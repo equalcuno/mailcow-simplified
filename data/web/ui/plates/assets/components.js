@@ -302,6 +302,16 @@
       const identity = element('div', 'p-row-identity');
       identity.append(element('span', 'p-row-icon'));
       identity.firstChild.append(icon(tasks[task].icon));
+      if (kind === 'domain' && /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/i.test(item.domain_name)) {
+        const mark = document.createElement('img'); mark.alt = ''; mark.loading = 'lazy'; mark.decoding = 'async'; mark.referrerPolicy = 'no-referrer';
+        const candidates = ['favicon.svg', 'favicon.ico', 'favicon.png']; let candidate = 0;
+        mark.addEventListener('load', () => identity.firstChild.classList.add('p-domain-icon-loaded'));
+        mark.addEventListener('error', () => {
+          if (++candidate < candidates.length) mark.src = 'https://' + item.domain_name + '/' + candidates[candidate];
+          else mark.remove();
+        });
+        mark.src = 'https://' + item.domain_name + '/' + candidates[candidate]; identity.firstChild.append(mark);
+      }
       const text = element('div');
       const label = kind === 'domain' ? item.domain_h_name || item.domain_name : kind === 'mailbox' ? item.username : item.address;
       const sub = kind === 'domain' ? item.description : kind === 'mailbox' ? item.name : item.goto;
@@ -327,12 +337,18 @@
         const count = element('button', 'p-domain-count', (item.mboxes_in_domain ?? 0) + ' ' + copy.mailboxes);
         count.type = 'button'; count.title = copy.open_mailboxes;
         count.addEventListener('click', () => { domain.value = item.domain_name; saveDomain(); search.value = ''; select('tab-mailboxes', true); });
-        const setup = element('button', 'p-domain-setup-link', 'Domain setup'); setup.type = 'button';
-        setup.addEventListener('click', () => openSetup(item.domain_name));
-        detail.append(count, element('span', 'p-row-subtitle', item.quota_used_in_domain == null ? '—' : bytes(item.quota_used_in_domain)), setup);
+        detail.append(count, element('span', 'p-row-subtitle', item.quota_used_in_domain == null ? '—' : bytes(item.quota_used_in_domain)));
       } else detail.append(element('span', 'p-row-subtitle', item.public_comment || ''));
       const edit = element('a', 'p-row-open'); edit.href = target; edit.setAttribute('aria-label', copy.edit + ' ' + label); edit.append(icon('arrow-up-right'));
-      node.append(identity, detail, status, edit);
+      const actions = element('div', 'p-row-actions');
+      if (kind === 'domain') {
+        const setup = element('button', 'btn btn-sm btn-info p-domain-setup-link'); setup.type = 'button';
+        setup.setAttribute('aria-label', 'DNS setup for ' + label); setup.title = 'DNS setup';
+        setup.append(icon('globe2'), element('span', '', 'DNS'));
+        setup.addEventListener('click', () => openSetup(item.domain_name)); actions.append(setup);
+      }
+      actions.append(edit);
+      node.append(identity, detail, status, actions);
       return node;
     }
     function footer() {
@@ -457,27 +473,127 @@
     const format = new Intl.NumberFormat();
     const date = time => new Date(time * 1000).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
     const text = (tag, className, value) => { const el = document.createElement(tag); if (className) el.className = className; el.textContent = value; return el; };
+    let hostTimer, mailTimer, hostRequest = null, mailRequest = null, disposed = false, lastMail = 0, lastResponse = 0;
+    let history = [];
+    const live = (label, good, detail) => {
+      const status = root.querySelector('[data-p-live-status]');
+      status.textContent = label; status.className = 'p-status ' + (good ? 'p-status-active' : 'p-status-pending');
+      root.querySelector('[data-p-live-updated]').textContent = detail;
+    };
+    const percent = value => {
+      if (value == null || value === '') return null;
+      const number = Number(value); return Number.isFinite(number) && number >= 0 && number <= 100 ? number : null;
+    };
+    const gib = value => value != null && Number.isFinite(Number(value)) ? (Number(value) / 1073741824).toFixed(1) + ' GiB' : '—';
+    const svgNode = (tag, attributes) => {
+      const node = document.createElementNS('http://www.w3.org/2000/svg', tag);
+      for (const [key, value] of Object.entries(attributes || {})) node.setAttribute(key, String(value));
+      return node;
+    };
+    function drawHistory() {
+      const end = history.at(-1)?.time || 0, span = Math.max(30, end - (history[0]?.time || end));
+      root.querySelectorAll('[data-p-host-chart]').forEach(chart => {
+        const key = chart.dataset.pHostChart, points = history.filter(sample => sample[key] !== null);
+        if (!points.length) { chart.replaceChildren(text('span', '', 'No measured samples yet')); return; }
+        const ceiling = key === 'pressure' ? Math.max(1, ...points.map(point => point[key])) : 100;
+        const svg = svgNode('svg', { viewBox: '0 0 240 64', preserveAspectRatio: 'none', 'aria-hidden': 'true' });
+        for (const y of [16, 32, 48]) svg.append(svgNode('line', { x1: 0, x2: 240, y1: y, y2: y, class: 'p-spark-grid' }));
+        let segment = [], segments = [], previous = null;
+        for (const sample of history) {
+          if (sample[key] === null || previous !== null && sample.time - previous > 15) {
+            if (segment.length) segments.push(segment); segment = [];
+          }
+          if (sample[key] !== null) segment.push([240 * (sample.time - (end - span)) / span, 60 - 56 * sample[key] / ceiling]);
+          previous = sample.time;
+        }
+        if (segment.length) segments.push(segment);
+        for (const values of segments) {
+          if (values.length > 1) {
+            const line = values.map(([x, y], index) => (index ? 'L' : 'M') + x.toFixed(2) + ',' + y.toFixed(2)).join(' ');
+            svg.append(svgNode('path', { d: line + ' L' + values.at(-1)[0].toFixed(2) + ',64 L' + values[0][0].toFixed(2) + ',64 Z', fill: 'currentColor', opacity: .1 }));
+            svg.append(svgNode('path', { d: line, fill: 'none', stroke: 'currentColor', 'stroke-width': 2, 'vector-effect': 'non-scaling-stroke' }));
+          }
+        }
+        const latest = points.at(-1), x = 240 * (latest.time - (end - span)) / span, y = 60 - 56 * latest[key] / ceiling;
+        svg.append(svgNode('circle', { cx: x, cy: y, r: 2.5, fill: 'currentColor' }));
+        const duration = Math.round(end - history[0].time), values = points.map(point => point[key]);
+        chart.setAttribute('aria-label', key + ' history: ' + values.length + ' measured samples; minimum ' + Math.min(...values).toFixed(2) + '%, maximum ' + Math.max(...values).toFixed(2) + '%');
+        chart.replaceChildren(svg, text('small', '', duration < 60 ? duration + ' seconds observed' : Math.floor(duration / 60) + ' min ' + duration % 60 + ' sec observed'));
+      });
+    }
+    function renderHost(host = {}, generatedAt, services) {
+      const responseAt = Number(generatedAt) || Date.now() / 1000;
+      const at = Number(host.sampled_at) || responseAt;
+      if (responseAt < lastResponse || responseAt === lastResponse && at < (history.at(-1)?.time || 0)) return;
+      lastResponse = responseAt;
+      const available = host.available !== false;
+      const cpu = available ? percent(host.cpu?.usage) : null, memory = available ? percent(host.memory?.usage) : null;
+      const pressure = available ? percent(host.memory_pressure?.some?.avg10) : null, storage = percent(host.storage?.usage_percent);
+      const values = {
+        cpu: cpu === null ? '—' : cpu.toFixed(1) + '%', cores: cpu === null ? 'Host telemetry unavailable' : host.cpu.cores + ' logical cores',
+        memory: memory === null ? '—' : memory.toFixed(1) + '%', memory_available: memory === null ? 'Unavailable' : gib(host.memory.available) + ' available / ' + gib(host.memory.total),
+        pressure: pressure === null ? '—' : pressure.toFixed(2) + '%', storage: storage === null ? '—' : storage.toFixed(1) + '%',
+        storage_available: storage === null ? 'Unavailable' : gib(host.storage.available_bytes) + ' available / ' + gib(host.storage.total_bytes),
+        uptime: available && Number.isFinite(Number(host.uptime)) ? Math.floor(host.uptime / 86400) + 'd ' + Math.floor(host.uptime % 86400 / 3600) + 'h' : '—',
+      };
+      root.querySelectorAll('[data-p-host]').forEach(el => { el.textContent = values[el.dataset.pHost] ?? '—'; });
+      if (!history.length || at > history.at(-1).time) {
+        history.push({ time: at, cpu, memory, pressure, storage });
+        history = history.filter(sample => sample.time >= at - 300).slice(-120); drawHistory();
+      }
+      live(cpu !== null && memory !== null ? 'Live · every 5 seconds' : 'Host telemetry unavailable', cpu !== null && memory !== null,
+        'Last checked ' + new Date(responseAt * 1000).toLocaleTimeString());
+      const list = root.querySelector('[data-p-services]');
+      if (Array.isArray(services)) list.replaceChildren(...services.map(service => {
+        const item = text('li', '', ''), healthy = service.running && (!service.health || service.health === 'healthy');
+        item.append(text('span', '', service.name), text('span', 'p-status ' + (healthy ? 'p-status-active' : 'p-status-pending'), !service.running ? 'Stopped' : service.health === 'unhealthy' ? 'Unhealthy' : service.health === 'starting' ? 'Starting' : 'Running'));
+        return item;
+      }));
+      else if (services === null) list.querySelectorAll('.p-status').forEach(status => { status.textContent = 'Unknown'; status.className = 'p-status p-status-inactive'; });
+    }
+    function scheduleHost() {
+      clearTimeout(hostTimer);
+      if (!disposed && !document.hidden) hostTimer = setTimeout(loadHost, 5000);
+    }
+    async function loadHost() {
+      if (disposed || document.hidden || hostRequest) return;
+      hostRequest = new AbortController(); const started = performance.now();
+      const timeout = setTimeout(() => hostRequest?.abort(new DOMException('Stats request timed out', 'TimeoutError')), 20000);
+      try {
+        const response = await fetch('/api/v1/get/overview/server', { credentials: 'same-origin', cache: 'no-store', signal: hostRequest.signal });
+        if (!response.ok) throw new Error('Stats unavailable');
+        const data = await response.json();
+        if (!data.server || typeof data.server !== 'object') throw new Error('Invalid stats');
+        if (!disposed && !document.hidden) {
+          renderHost(data.server, data.generated_at, data.services);
+          root.querySelector('[data-p-api-time]').textContent = Math.round(performance.now() - started) + ' ms';
+        }
+      } catch (error) {
+        if (error.name !== 'AbortError' && !disposed && !document.hidden) {
+          live('Reconnecting…', false, 'Live stats are unavailable. Retrying in 5 seconds.');
+          root.querySelectorAll('[data-p-host="cpu"], [data-p-host="memory"], [data-p-host="pressure"], [data-p-host="storage"], [data-p-host="uptime"]').forEach(el => { el.textContent = '—'; });
+          root.querySelectorAll('[data-p-host="cores"], [data-p-host="memory_available"], [data-p-host="storage_available"]').forEach(el => { el.textContent = 'Unavailable'; });
+          const at = Date.now() / 1000;
+          if (at > (history.at(-1)?.time || 0)) {
+            history.push({ time: at, cpu: null, memory: null, pressure: null, storage: null });
+            history = history.filter(sample => sample.time >= at - 300).slice(-120); drawHistory();
+          }
+          root.querySelectorAll('[data-p-services] .p-status').forEach(status => { status.textContent = 'Unknown'; status.className = 'p-status p-status-inactive'; });
+        }
+      } finally { clearTimeout(timeout); hostRequest = null; scheduleHost(); }
+    }
     const load = async () => {
+      if (mailRequest || disposed || document.hidden) return;
+      clearTimeout(mailTimer); mailRequest = new AbortController();
       button.disabled = true; root.setAttribute('aria-busy', 'true');
       const started = performance.now();
       try {
-        const response = await fetch('/api/v1/get/overview', { credentials: 'same-origin' });
+        const response = await fetch('/api/v1/get/overview', { credentials: 'same-origin', cache: 'no-store', signal: mailRequest.signal });
         if (!response.ok) throw new Error('Unavailable');
         const data = await response.json();
         if (!data.counts || !data.inventory || !Array.isArray(data.hourly) || !data.coverage) throw new Error('Invalid metrics');
-        const gib = value => Number.isFinite(Number(value)) ? (Number(value) / 1073741824).toFixed(1) + ' GiB' : '—';
-        const host = data.server || {};
-        const hostValues = {
-          cpu: host.cpu ? Number(host.cpu.usage).toFixed(1) + '%' : '—',
-          cores: host.cpu ? host.cpu.cores + ' logical cores' : 'Host telemetry unavailable',
-          memory: host.memory ? Number(host.memory.usage).toFixed(1) + '%' : '—',
-          memory_available: host.memory ? gib(host.memory.available) + ' available / ' + gib(host.memory.total) : 'Unavailable',
-          pressure: host.memory_pressure?.some ? Number(host.memory_pressure.some.avg10).toFixed(2) + '%' : 'Unavailable',
-          storage: host.storage ? Number(host.storage.usage_percent).toFixed(1) + '%' : '—',
-          storage_available: host.storage ? gib(host.storage.available_bytes) + ' available / ' + gib(host.storage.total_bytes) : 'Unavailable',
-          uptime: Number.isFinite(Number(host.uptime)) ? Math.floor(host.uptime / 86400) + 'd ' + Math.floor(host.uptime % 86400 / 3600) + 'h' : '—',
-        };
-        root.querySelectorAll('[data-p-host]').forEach(el => { el.textContent = hostValues[el.dataset.pHost] ?? '—'; });
+        renderHost(data.server, data.generated_at, data.services);
+        lastMail = Date.now();
         root.querySelectorAll('[data-p-timing]').forEach(el => {
           const value = data.timings?.[el.dataset.pTiming];
           el.textContent = typeof value === 'number' && Number.isFinite(value) ? value.toFixed(2) + ' s' : 'No samples';
@@ -512,16 +628,28 @@
             item.append(label, track); return item;
           }) : [text('li', 'p-ranking-empty', copy.empty)]));
         });
-      } catch (_) {
+      } catch (error) {
+        if (error.name === 'AbortError') return;
         root.querySelector('[data-p-coverage]').textContent = copy.error;
-        root.querySelectorAll('[data-p-host], [data-p-timing], [data-p-api-time]').forEach(el => { el.textContent = '—'; });
+        root.querySelectorAll('[data-p-timing]').forEach(el => { el.textContent = '—'; });
         root.querySelectorAll('[data-p-metric], [data-p-inventory]').forEach(el => { el.textContent = '—'; });
         root.querySelector('[data-p-activity]').replaceChildren();
         root.querySelector('[data-p-activity-times]').replaceChildren();
         root.querySelectorAll('[data-p-ranking]').forEach(list => list.replaceChildren(text('li', 'p-ranking-empty', copy.error)));
-      } finally { button.disabled = false; root.setAttribute('aria-busy', 'false'); }
+      } finally {
+        mailRequest = null; button.disabled = false; root.setAttribute('aria-busy', 'false');
+        if (!disposed && !document.hidden) { mailTimer = setTimeout(load, 60000); if (!hostRequest) scheduleHost(); }
+      }
     };
     button.addEventListener('click', load);
+    document.addEventListener('visibilitychange', () => {
+      clearTimeout(hostTimer); clearTimeout(mailTimer);
+      if (document.hidden) { hostRequest?.abort(); mailRequest?.abort(); live('Paused', false, 'Live updates resume when this tab is visible.'); }
+      else { loadHost(); if (Date.now() - lastMail >= 60000) load(); else mailTimer = setTimeout(load, Math.max(1000, 60000 - (Date.now() - lastMail))); }
+    });
+    window.addEventListener('pagehide', () => { disposed = true; clearTimeout(hostTimer); clearTimeout(mailTimer); hostRequest?.abort(); mailRequest?.abort(); });
+    window.addEventListener('pageshow', event => { if (event.persisted) { disposed = false; load(); } });
+    loadHost();
     load();
   }
 

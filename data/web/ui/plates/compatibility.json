@@ -1,5 +1,5 @@
 {
-  "reviewed_base": "7c1898bd3b01dd3760c73dcfed9a5329278abf42",
+  "reviewed_base": "34b9e9add6b6ec6026b481f91e7c4ca7b95391eb",
   "sha256": {
     "data/web/templates/base.twig": "81ed9ad1e9bbd1c1451cb34646f6d160e9754e189faabc77495716d3114f22e8",
     "data/web/templates/user_index.twig": "5f9e018e103b68bdc1f68588c8005616858649800342facf9b0d1c3319b11a2e",
@@ -27,8 +27,8 @@
     "data/web/inc/functions.mailbox.inc.php": "67a0d4b3af78f8d0a24352191aacfdbfc37315f73c94886df5c82fa2bc2242f6",
     "data/web/inc/init_db.inc.php": "710497a0ee685eabb169b90d0856020e5a30fb8fa3154ef2940493fddc9f3c78",
     "data/web/inc/lib/ssp.class.php": "d6aafcea4122f3f44cac974f80f65f6df7c39743109608e267acd964d0dc7ae8",
-    "data/web/json_api.php": "d4f82384d7bb512468fc2a4c55cacc55aee69baff334c0970860d3f4f7261ed5",
-    "data/web/api/openapi.yaml": "4e8374558e9f82decbf68bd1dc19e375e8b2e039af84eb9fecca5c6c5320a640",
+    "data/web/json_api.php": "8406f7b0bf17545dbbc9997bcbd95e4040ac7095c62909e03091aaea3ad41dcb",
+    "data/web/api/openapi.yaml": "a3ca70efa1d60c1748ba3076405b99ff5a26e6577156f6ffc32bc6a9f8bce280",
     "data/web/js/build/001-bootstrap.bundle.min.js": "e4fd49181388c48ec5040bd3fe66f57c29c8e67fcd8502b3354b96ec7ab47cc7",
     "data/web/js/build/004-datatables.js": "37c71fc2923e4e1291c31f8767e46e9e12655e25dd71e37c0546620132f5f9ff",
     "data/web/js/build/011-api.js": "618c88e3b4407eeab3a8d33f6b3dea6df83cf09f06beddd097c45a18bcd5864f",
@@ -57,6 +57,7 @@
     "data/web/inc/lib/mailcow/Ui/WebmailAccess.php": "3a5e6e5a3012b8eeb1262d5b92dbe2aad09daf533724506adceee948785ec290",
     "data/web/inc/lib/mailcow/Mailbox/BatchCreator.php": "1229e09a4b91f9e72e54df54a0de0f52ccce0766dd2ebb531c6db08906a244ee",
     "data/web/inc/lib/mailcow/Ui/DomainSetup.php": "383da4b24f5804aa3cd252545f33d4ee8d07b71678011da06095dc34ddad0d04",
+    "data/web/inc/lib/mailcow/Ui/OverviewStats.php": "2a33c40f645b4ba6e851beb6eddd8bfc7db505fe245527c611088d5217d19fa1",
     "data/Dockerfiles/dockerapi/modules/DockerApi.py": "bb6bd7880d4e5a033801136375eccda15b1a097592beb81839b5d9135fed0c20",
     "docker-compose.yml": "0beff8a06405e1b235fe0ea35c90c03ffb71ac47cecbe895da95df664e866efe",
     "data/conf/roundcube/config.inc.php": "c0dfed8d9e2b2198131d9361d62144f3cf55e915bd8bfa8581ad607f141c6557",

@@ -68,6 +68,33 @@ verify($snapshot['inventory']['domains'] === 2 && $snapshot['inventory']['active
 verify($snapshot['inventory']['mailboxes'] === 1 && $snapshot['inventory']['used_bytes'] === 400 && $snapshot['inventory']['stored_messages'] === 12, 'Resource accounts are excluded from mailbox inventory/storage');
 verify($snapshot['coverage']['capped'] && $snapshot['coverage']['scan_limit'] === 20000, 'Bounded metrics expose their scan limit');
 
+$telemetryCache = new class {
+  public array $data = [];
+  public function get($key) { return $this->data[$key] ?? false; }
+  public function setex($key, $ttl, $value) { $this->data[$key] = $value; }
+};
+$telemetryCalls = [];
+$telemetry = static function ($action, ...$arguments) use (&$telemetryCalls, $now) {
+  $telemetryCalls[] = $action;
+  return match ($action) {
+    'host_stats' => ['sampled_at' => $now, 'cpu' => ['usage' => 18.2, 'cores' => 4], 'memory' => ['usage' => 34.4]],
+    'post' => json_encode(['total_bytes' => 1000, 'available_bytes' => 600, 'usage_percent' => 40]),
+    'containers' => ['nginx-mailcow' => ['State' => ['Running' => true], 'Config' => ['Env' => ['SECRET=private']]]],
+  };
+};
+fails(fn() => OverviewStats::serverSnapshot($telemetryCache, 'domainadmin', $now, $telemetry), 'Domain admins cannot access live host stats');
+verify(!$telemetryCalls, 'Live stats authorize before querying host services');
+$live = OverviewStats::serverSnapshot($telemetryCache, 'admin', $now, $telemetry);
+verify($live['server']['available'] && $live['server']['cpu']['usage'] === 18.2, 'Lightweight live stats use observed host values without a mail-log store or database');
+verify($live['services'][0]['running'] && !str_contains(json_encode($live), 'SECRET'), 'Live service status never exposes container environments');
+OverviewStats::serverSnapshot($telemetryCache, 'admin', $now + 5, $telemetry);
+verify(count(array_filter($telemetryCalls, fn($action) => $action === 'post')) === 1, 'Mail filesystem checks are cached between five-second polls');
+$stale = OverviewStats::serverSnapshot($telemetryCache, 'admin', $now + 31, $telemetry);
+verify(!$stale['server']['available'] && !isset($stale['server']['cpu']), 'Stale host telemetry cannot be presented as live');
+verify(count(array_filter($telemetryCalls, fn($action) => $action === 'post')) === 2, 'Filesystem checks refresh after thirty seconds');
+$unavailable = OverviewStats::serverSnapshot($telemetryCache, 'admin', $now + 35, static fn() => throw new RuntimeException('offline'));
+verify(!$unavailable['server']['available'] && $unavailable['services'] === null, 'Missing host and service telemetry is explicit');
+
 fails(fn() => Branding::saveName($store, 'domainadmin', false, 'Wrong'), 'Only admins can change business branding');
 fails(fn() => Branding::saveName($store, 'admin', true, 'Wrong'), 'Demo branding changes stay disabled');
 fails(fn() => Branding::saveName($store, 'admin', false, ''), 'Business names cannot be empty');

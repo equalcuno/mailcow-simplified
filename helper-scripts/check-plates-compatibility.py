@@ -65,6 +65,7 @@ DEPENDENCIES = [
     'data/web/inc/lib/mailcow/Ui/WebmailAccess.php',
     'data/web/inc/lib/mailcow/Mailbox/BatchCreator.php',
     'data/web/inc/lib/mailcow/Ui/DomainSetup.php',
+    'data/web/inc/lib/mailcow/Ui/OverviewStats.php',
     'data/Dockerfiles/dockerapi/modules/DockerApi.py',
     'docker-compose.yml',
     'data/conf/roundcube/config.inc.php',

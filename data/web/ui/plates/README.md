@@ -88,8 +88,16 @@ success/failure attempts, hourly activity, top sending/destination/local domains
 and current domain/mailbox/storage inventory. Sender rankings need retained queue
 metadata. Local deliveries can include internal mail. Postfix delivery reports are
 [recipient-oriented](https://www.postfix.org/smtp.8.html), so message and delivery
-counts are shown separately. Container status is captured on page load; Refresh
-refreshes activity/inventory, while reloading the page refreshes service status.
+counts are shown separately. Host measurements and container status refresh every
+five seconds through the administrator-only `/api/v1/get/overview/server` endpoint;
+filesystem measurements are cached for 30 seconds. CPU, RAM, memory pressure and
+filesystem graphs retain up to five minutes of measurements observed while the
+page is open. Missing samples remain gaps. Mail activity/inventory refresh every
+minute and on Refresh. Polling pauses in hidden tabs.
+
+Domain rows include a DNS button beside the edit arrow. Icons try the domain's
+HTTPS `/favicon.svg`, `/favicon.ico` and `/favicon.png`, then fall back to the globe.
+Images load directly in the browser without a referrer; SVGs are never inlined.
 
 The package is tracked under `ui/plates`, outside mailcow's Git-ignored theme
 folders. Fonts are local Red Hat Text/Display assets with their OFL notice.

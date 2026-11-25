@@ -482,8 +482,12 @@ if (isset($_GET['query'])) {
               echo json_encode(['type' => 'error', 'msg' => 'Administrator access required']);
               break;
             }
+            // Read-only polling must not hold the browser session during Docker calls.
+            if (session_status() === PHP_SESSION_ACTIVE) session_write_close();
             try {
-              process_get_return(\Mailcow\Ui\OverviewStats::snapshot($redis, $pdo, $_SESSION['mailcow_cc_role'], time()));
+              process_get_return($object === 'server'
+                ? \Mailcow\Ui\OverviewStats::serverSnapshot($redis, $_SESSION['mailcow_cc_role'], time())
+                : \Mailcow\Ui\OverviewStats::snapshot($redis, $pdo, $_SESSION['mailcow_cc_role'], time()));
             } catch (\Throwable $e) {
               http_response_code(503);
               echo json_encode(['type' => 'error', 'msg' => 'Overview metrics are temporarily unavailable']);

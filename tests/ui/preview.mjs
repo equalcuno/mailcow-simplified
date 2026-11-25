@@ -13,7 +13,7 @@ const domains = ['example.org', 'studio.co.za'].map((domain_name, i) => ({
   domain_name, domain_h_name: domain_name, description: i ? 'Studio mail' : 'Team mail',
   aliases_in_domain: i ? 2 : 6, max_num_aliases_for_domain: 100,
   mboxes_in_domain: i ? 1 : 2, max_num_mboxes_for_domain: 50,
-  quota_used_in_domain: '1.2 GiB', max_quota_for_domain: '100 GiB', bytes_total: '1.2 GiB',
+  quota_used_in_domain: 1288490189, max_quota_for_domain: 107374182400, bytes_total: 1288490189,
   msgs_total: 1874, def_quota_for_mbox: 5368709120, max_quota_for_mbox: 10737418240,
   def_new_mailbox_quota: 5368709120, max_new_mailbox_quota: 10737418240,
   active: 1, backupmx: 0, relay_all_recipients: 0, relay_unknown_only: 0, tags: [],
@@ -50,6 +50,7 @@ export async function buildPreviewAssets() {
 
 export async function startPreview(port = 0) {
   const writes = [];
+  let telemetryRead = 0;
   const { baseJS, mailJS, editJS, css } = await buildPreviewAssets();
   const server = createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
@@ -82,7 +83,19 @@ export async function startPreview(port = 0) {
           writes.push({ path: url.pathname, payload });
           return send([{ type: 'success', msg: 'Fixture only: request captured' }]);
         }
-        if (url.pathname === '/api/v1/get/overview') return send(await readFile(join(output, 'overview.json')), 'application/json');
+        if (['/api/v1/get/overview', '/api/v1/get/overview/server'].includes(url.pathname)) {
+          const fixture = JSON.parse(await readFile(join(output, 'overview.json'), 'utf8'));
+          fixture.generated_at = Math.floor(Date.now() / 1000);
+          fixture.server.sampled_at = Date.now() / 1000;
+          if (url.pathname.endsWith('/server')) {
+            const wave = [23.5, 31.2, 19.1, 38.4, 26.8, 18.2][telemetryRead++ % 6];
+            fixture.server.cpu.usage = wave;
+            fixture.server.memory.usage = 33 + wave / 10;
+            fixture.server.memory_pressure.some.avg10 = wave / 100;
+          }
+          fixture.services = [{ name: 'postfix-mailcow', running: true, health: null }, { name: 'dovecot-mailcow', running: true, health: 'healthy' }, { name: 'rspamd-mailcow', running: true, health: null }];
+          return send(url.pathname.endsWith('/server') ? { generated_at: fixture.generated_at, server: fixture.server, services: fixture.services } : fixture);
+        }
         if (url.pathname === '/api/v1/search/domain' || url.pathname === '/api/v1/search/mailbox') {
           const source = url.pathname.endsWith('/domain') ? domains : mailboxes;
           const scoped = payload.domain ? source.filter(item => item.domain === payload.domain) : source;
