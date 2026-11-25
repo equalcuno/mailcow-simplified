@@ -217,6 +217,57 @@ class TransactionTests(unittest.TestCase):
         self.assertFalse(Guard.events)
         self.assertFalse(any(args == ['stop-all'] for args in engine.operations))
 
+    def test_only_success_replaces_older_backups_and_keeps_foreign_or_unmanaged_data(self):
+        engine = self.engine(); engine.upgrade(self.source)
+        first = Path(engine.job['backup'])
+        failed = self.engine('health')
+        with self.assertRaises(worker.UpgradeError): failed.upgrade(self.source)
+        second = Path(failed.job['backup'])
+        self.assertTrue(first.is_dir(), 'Rollback must retain the previous verified backup')
+        self.assertTrue(second.is_dir(), 'Rollback must retain its own backup and diagnostics')
+        unknown = first.parent / 'manual-backup'; unknown.mkdir(); (unknown / 'keep').touch()
+        foreign = first.parent / ('20000101T000000Z-' + 'a' * 8); foreign.mkdir()
+        (foreign / 'transaction.json').write_text(json.dumps({'version': 1, 'id': 'a' * 32, 'daemon_id': engine.job['daemon_id'], 'target': str(self.folder / 'another-instance'), 'backup': str(foreign)}))
+        other_host = first.parent / ('20000101T000002Z-' + 'd' * 8); other_host.mkdir()
+        (other_host / 'transaction.json').write_text(json.dumps({'version': 1, 'id': 'd' * 32, 'daemon_id': 'another-docker-host', 'target': str(self.target), 'backup': str(other_host)}))
+        link = first.parent / ('20000101T000001Z-' + 'b' * 8); link.symlink_to(unknown, target_is_directory=True)
+        success = self.engine(); success.upgrade(self.source)
+        self.assertFalse(first.exists()); self.assertFalse(second.exists())
+        self.assertTrue(Path(success.job['backup']).is_dir())
+        success.verify_backup()
+        self.assertTrue((unknown / 'keep').exists()); self.assertTrue(foreign.is_dir()); self.assertTrue(link.is_symlink())
+        self.assertTrue(other_host.is_dir())
+        self.assertEqual(success.job['backup_cleanup']['status'], 'complete')
+        self.assertEqual(len(success.job['backup_cleanup']['removed']), 2)
+
+    def test_backup_cleanup_failure_cannot_roll_back_a_committed_update(self):
+        first = self.engine(); first.upgrade(self.source)
+        previous = Path(first.job['backup'])
+        engine = self.engine()
+        with patch.object(worker.shutil, 'rmtree', side_effect=PermissionError('Injected backup cleanup error')):
+            engine.upgrade(self.source)
+        self.assertEqual(engine.job['phase'], 'complete'); self.assertTrue(engine.job['committed'])
+        self.assertEqual(engine.job['backup_cleanup']['status'], 'incomplete')
+        self.assertTrue(previous.is_dir()); self.assertTrue(Path(engine.job['backup']).is_dir())
+        self.assertEqual(self.volume.read_text(), 'candidate runtime data')
+        self.assertFalse(Guard.active)
+
+    def test_corrupt_new_backup_prevents_cleanup_of_previous_backup(self):
+        engine = self.engine(); engine.upgrade(self.source)
+        current = Path(engine.job['backup'])
+        previous = current.parent / ('20000101T000000Z-' + 'c' * 8); previous.mkdir()
+        (previous / 'transaction.json').write_text(json.dumps({'version': 1, 'id': 'c' * 32, 'daemon_id': engine.job['daemon_id'], 'target': str(self.target), 'backup': str(previous)}))
+        (current / 'images.tar').write_bytes(b'corrupt archive')
+        engine.job.pop('backup_cleanup'); engine.cleanup_successful_backups()
+        self.assertTrue(previous.is_dir()); self.assertTrue(current.is_dir())
+        self.assertEqual(engine.job['backup_cleanup']['status'], 'incomplete')
+
+    def test_check_does_not_replace_any_backup(self):
+        engine = self.engine(); engine.upgrade(self.source)
+        before = set(self.folder.joinpath('backups').iterdir())
+        self.engine().upgrade(self.source, check=True)
+        self.assertEqual(set(self.folder.joinpath('backups').iterdir()), before)
+
     def test_registry_failure_happens_before_maintenance(self):
         engine = self.engine('pull')
         with self.assertRaises(worker.UpgradeError): engine.upgrade(self.source)
@@ -510,6 +561,36 @@ class FirewallTests(unittest.TestCase):
         self.assertFalse(any('-F' in cmd for cmd in commands))
 
 
+class LockTests(unittest.TestCase):
+    def test_another_process_is_rejected_and_lock_releases_automatically(self):
+        with tempfile.TemporaryDirectory(prefix='upgrade-lock-') as directory:
+            code = ('import importlib.util,sys; from pathlib import Path; '
+                    's=importlib.util.spec_from_file_location("worker",sys.argv[1]); m=importlib.util.module_from_spec(s); s.loader.exec_module(m); '
+                    'lock=m.installation_lock(Path(sys.argv[2])); lock.__enter__(); print("acquired")')
+            command = [sys.executable, '-c', code, str(ROOT/'helper-scripts/upgrade_worker.py'), directory]
+            environment = dict(os.environ); environment.pop('MAILCOW_UPGRADE_LOCK_FD', None)
+            with worker.installation_lock(directory) as lock:
+                rejected = subprocess.run(command, env=environment, capture_output=True, text=True)
+                self.assertNotEqual(rejected.returncode, 0)
+                self.assertIn('Another upgrade or recovery is already running', rejected.stderr)
+                inherited = dict(environment, MAILCOW_UPGRADE_LOCK_FD=str(lock.fileno()))
+                accepted = subprocess.run(command, env=inherited, pass_fds=(lock.fileno(),), capture_output=True, text=True)
+                self.assertEqual(accepted.returncode, 0, accepted.stderr)
+                self.assertNotEqual(subprocess.run(command, env=environment, capture_output=True).returncode, 0,
+                                    'The child must not release the bootstrap parent lock')
+            accepted = subprocess.run(command, env=environment, capture_output=True, text=True)
+            self.assertEqual(accepted.returncode, 0, accepted.stderr)
+            self.assertTrue(Path(directory,'.update-ui.lock').is_file(), 'The lock inode must persist')
+
+    def test_inherited_lock_cannot_target_a_different_installation(self):
+        with tempfile.TemporaryDirectory(prefix='upgrade-lock-owner-') as directory:
+            first = Path(directory,'first'); second = Path(directory,'second'); first.mkdir(); second.mkdir()
+            with worker.installation_lock(first) as lock, worker.installation_lock(second):
+                with patch.dict(os.environ, MAILCOW_UPGRADE_LOCK_FD=str(lock.fileno())):
+                    with self.assertRaisesRegex(worker.UpgradeError, 'does not belong'):
+                        with worker.installation_lock(second): pass
+
+
 class BootstrapTests(unittest.TestCase):
     def test_modes_and_temp_checkout_cleanup_on_success_and_failure(self):
         with tempfile.TemporaryDirectory(prefix='bootstrap-fixture-') as directory:
@@ -527,6 +608,12 @@ sys.exit(int(os.environ.get('FIXTURE_EXIT', '0')))
             for name in ('mailcow.conf', 'docker-compose.yml'): (target / name).touch()
             output = folder / 'result.json'
             base = ['bash', str(ROOT / 'upgrade.sh'), '--target', str(target), '--repo', str(source)]
+            with worker.installation_lock(target):
+                blocked = subprocess.run(base, env=dict(os.environ, FIXTURE_OUTPUT=str(output)), capture_output=True, text=True)
+                self.assertNotEqual(blocked.returncode, 0)
+                self.assertIn('Another upgrade or recovery is already running', blocked.stderr)
+                self.assertNotIn('Downloading', blocked.stdout, 'The bootstrap must lock before downloading')
+                self.assertFalse(output.exists())
             for flag, mode, code in (([], 'roundcube', '0'), (['--skip-roundcube'], 'preserve', '0'), (['--regress-sogo'], 'sogo', '1')):
                 with self.subTest(mode=mode):
                     result = subprocess.run(base + flag, env=dict(os.environ, FIXTURE_OUTPUT=str(output), FIXTURE_EXIT=code), capture_output=True, text=True)

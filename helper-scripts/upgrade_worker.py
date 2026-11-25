@@ -19,6 +19,7 @@ import secrets
 import selectors
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import tempfile
@@ -46,6 +47,25 @@ class UpgradeInterrupted(BaseException):
     def __init__(self, signum):
         self.signum = signum
         super().__init__('Upgrade interrupted; recovery runs before exit.')
+
+
+@contextlib.contextmanager
+def exclusive_lock(path, inherited=None, message='Another upgrade or recovery is already running for this installation.'):
+    path = Path(path)
+    fd = os.dup(int(inherited)) if inherited is not None else os.open(path, os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, 'a') as lock:
+        opened = os.fstat(lock.fileno())
+        named = path.lstat()
+        if not stat.S_ISREG(named.st_mode) or (opened.st_dev, opened.st_ino) != (named.st_dev, named.st_ino):
+            raise UpgradeError('The update lock does not belong to this installation.')
+        try: fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError: raise UpgradeError(message) from None
+        # Never unlink a lock file: another process may already hold its inode.
+        yield lock
+
+
+def installation_lock(root):
+    return exclusive_lock(Path(root) / '.update-ui.lock', os.environ.get('MAILCOW_UPGRADE_LOCK_FD'))
 
 
 def atomic_json(path, value):
@@ -318,6 +338,8 @@ class Engine:
 
     def public_status(self):
         status = {key: self.job.get(key) for key in ('id', 'phase', 'message', 'commit', 'updated_at')}
+        if self.job.get('backup_cleanup', {}).get('status') == 'incomplete':
+            status['message'] += ' Some older backups were retained; inspect the worker log.'
         failure = self.job.get('failure')
         if failure:
             status['failure'] = failure
@@ -525,6 +547,44 @@ class Engine:
         self.job['backup_complete'] = True
         atomic_json(self.journal, self.job)
 
+    def cleanup_successful_backups(self):
+        if not self.job.get('committed') or self.job['phase'] != 'complete' or not self.job.get('backup_complete'):
+            return
+        if self.job.get('backup_cleanup', {}).get('status') == 'complete': return
+        cleanup = {'status': 'complete', 'removed': [], 'errors': []}
+        try:
+            current = Path(self.job['backup'])
+            if current.is_symlink() or current.parent.resolve() != self.backups:
+                raise UpgradeError('The retained backup is outside this installation backup directory.')
+            # Never discard the previous recovery points unless the new one still verifies.
+            self.verify_backup()
+            for previous in self.backups.iterdir():
+                if previous == current or previous.is_symlink() or not previous.is_dir(): continue
+                metadata = previous / 'transaction.json'
+                if metadata.is_symlink() or not metadata.is_file(): continue
+                try:
+                    owner = json.loads(metadata.read_text())
+                    if not isinstance(owner, dict): continue
+                    identifier = owner.get('id', '')
+                    if owner.get('version') != 1 or not re.fullmatch(r'[a-f0-9]{32}', identifier): continue
+                    if owner.get('daemon_id') != self.job.get('daemon_id'): continue
+                    if not re.fullmatch(r'\d{8}T\d{6}Z-' + re.escape(identifier[:8]), previous.name): continue
+                    if Path(owner.get('target', '')).resolve() != self.root or Path(owner.get('backup', '')).resolve() != previous.resolve(): continue
+                    shutil.rmtree(previous)
+                    cleanup['removed'].append(previous.name)
+                except (OSError, ValueError, TypeError) as error:
+                    cleanup['errors'].append(previous.name + ': ' + str(error))
+            if cleanup['errors']: cleanup['status'] = 'incomplete'
+        except Exception as error:
+            cleanup['status'] = 'incomplete'; cleanup['errors'].append(str(error))
+        self.job['backup_cleanup'] = cleanup
+        try: atomic_json(self.journal, self.job)
+        except Exception as error: self.log('Could not save backup cleanup status: ' + str(error))
+        if cleanup['errors']:
+            self.log('Update succeeded; some older backups were retained: ' + '; '.join(cleanup['errors']))
+        else:
+            self.log(f'Latest verified backup retained; removed {len(cleanup["removed"])} older backup(s).')
+
     # Services whose on-disk state is archived by the cold backup. A SIGKILL here
     # can leave torn writes, so the backup must not proceed. Other services
     # (watchdog, acme, ofelia, unbound, netfilter, …) hold no archived state and
@@ -608,7 +668,8 @@ class Engine:
         firewall.block()
         # Once public access was committed, never restore an older mailbox snapshot.
         if self.job.get('committed'):
-            firewall.release(); self.phase('complete', 'Update completed; traffic guard cleanup recovered.'); return
+            firewall.release(); self.phase('complete', 'Update completed; traffic guard cleanup recovered.')
+            self.cleanup_successful_backups(); return
         self.phase('restoring', 'Recovering the previous stack while mail access remains paused.')
         self.stop_all(strict=False)
         if self.job.get('applied'):
@@ -752,6 +813,7 @@ class Engine:
                 raise UpgradeError(f'Recovery failed; journal: {self.journal}. {recovery_error}')
             if self.job.get('committed') and self.job['phase'] == 'complete': return
             raise
+        self.cleanup_successful_backups()
 
 
 def load_config(path):
@@ -784,10 +846,16 @@ def daemon(config, config_path=Path('/etc/mailcow-simplified-updates.json')):
         if engine.job['phase'] == 'manual_recovery':
             raise UpgradeError('Recovery is awaiting an operator. Inspect the journal and run --recover explicitly.')
         if engine.job['phase'] not in TERMINAL:
-            with open(engine.root / '.update-ui.lock', 'a') as lock:
-                fcntl.flock(lock, fcntl.LOCK_EX)
-                engine.restore()
+            with installation_lock(engine.root):
+                engine.job = json.loads(engine.journal.read_text())
+                if engine.job['phase'] not in TERMINAL: engine.restore()
     engine.load_environment()
+    if engine.job and engine.job['phase'] == 'complete' and engine.job.get('committed') and 'backup_cleanup' not in engine.job:
+        # Resume cleanup if the previous process exited after commit, including
+        # the first deployment introducing retention into an older running worker.
+        with installation_lock(engine.root):
+            engine.job = json.loads(engine.journal.read_text())
+            engine.cleanup_successful_backups()
     if engine.job and engine.job.get('request_id') and engine.job['phase'] in TERMINAL:
         redis_call(engine, 'EVAL', "if redis.call('get',KEYS[1])==ARGV[1] then return redis.call('del',KEYS[1],KEYS[2]) end return 0",
                    '2', KEYS['lock'], KEYS['queue'], engine.job['request_id'])
@@ -812,8 +880,7 @@ def daemon(config, config_path=Path('/etc/mailcow-simplified-updates.json')):
             request = redis_call(engine, 'GET', KEYS['queue'])
             if request:
                 request = json.loads(request)
-                with open(engine.root / '.update-ui.lock', 'a') as lock:
-                    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                with installation_lock(engine.root):
                     claimed = request.get('id')
                     if not re.fullmatch(r'[a-f0-9]{32}', request.get('id', '')) or request.get('commit') != candidate:
                         raise UpgradeError('Queued release no longer matches the configured remote.')
@@ -865,20 +932,21 @@ def main():
         if args.release_ref and not installed.exists(): config['ref'] = args.release_ref
         if args.backup_dir: config['backup_dir'] = str(args.backup_dir)
     else: config = load_config(args.config)
-    if args.daemon: daemon(config, args.config); return
     engine = Engine(config)
-    if args.guard_only or args.recover:
-        if engine.journal.exists():
-            engine.job = json.loads(engine.journal.read_text())
-            if engine.job['phase'] not in TERMINAL:
-                if args.guard_only: Firewall(engine.job['bridge'], engine.job['families'], engine.job['id']).block()
-                else:
-                    with open(engine.root / '.update-ui.lock', 'a') as lock:
-                        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                        engine.restore()
+    if args.daemon:
+        engine.state.mkdir(parents=True, exist_ok=True, mode=0o700)
+        with exclusive_lock(engine.state / 'daemon.lock', message='Another update worker is already running.'):
+            daemon(config, args.config)
         return
-    with open(engine.root / '.update-ui.lock', 'a') as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    if args.guard_only or args.recover:
+        with installation_lock(engine.root):
+            if engine.journal.exists():
+                engine.job = json.loads(engine.journal.read_text())
+                if engine.job['phase'] not in TERMINAL:
+                    if args.guard_only: Firewall(engine.job['bridge'], engine.job['families'], engine.job['id']).block()
+                    else: engine.restore()
+        return
+    with installation_lock(engine.root):
         engine.upgrade(args.source, args.mode, args.check)
     if not args.check:
         result = execute(['systemctl', 'start', 'mailcow-simplified-updates.service'], allow_failure=True)

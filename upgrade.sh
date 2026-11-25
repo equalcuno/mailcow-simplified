@@ -5,6 +5,7 @@ command -v python3 >/dev/null || { echo 'Python 3 is required.' >&2; exit 1; }
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 exec python3 - "$SCRIPT_DIR" "$@" <<'PY'
 import argparse
+import fcntl
 from pathlib import Path
 import os
 import signal
@@ -31,6 +32,14 @@ environment = dict(os.environ, GIT_TERMINAL_PROMPT='0')
 def interrupted(signum, frame): raise InterruptedError('Upgrade interrupted; waiting for recovery.')
 signal.signal(signal.SIGTERM, interrupted)
 try:
+    # Keep one installation lock from before download until child recovery and
+    # temporary-checkout cleanup finish. The worker inherits this same lock.
+    lock = open(target / '.update-ui.lock', 'a')
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        raise RuntimeError('Another upgrade or recovery is already running for this installation.') from None
+    environment['MAILCOW_UPGRADE_LOCK_FD'] = str(lock.fileno())
     with tempfile.TemporaryDirectory(prefix='mailcow-upgrade-') as directory:
         source = Path(directory) / 'repo'
         print(f'Downloading {args.repo} ({args.ref})…', flush=True)
@@ -44,7 +53,7 @@ try:
                    '--release-ref', args.ref]
         if args.backup_dir: command += ['--backup-dir', str(Path(args.backup_dir).resolve())]
         if args.check: command.append('--check')
-        child = subprocess.Popen(command, env=environment)
+        child = subprocess.Popen(command, env=environment, pass_fds=(lock.fileno(),))
         try:
             result = child.wait()
         except (KeyboardInterrupt, InterruptedError):

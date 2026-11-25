@@ -145,7 +145,15 @@ this lets unfinished transactions stay isolated across Docker/host restarts.
 A failure before commit restores the previous stack/data while connections remain
 blocked. If recovery itself fails, access stays guarded and the private transaction
 journal identifies the retained backup. After commit, cleanup does not restore
-older mail data over newly accepted messages. Existing backups are not pruned.
+older mail data over newly accepted messages. After a successful update, the new
+backup is verified again and replaces older update backups from the same installation
+and Docker host. Failed updates and rollbacks retain their backups. Unrelated,
+manually named and linked directories are never pruned. Cleanup failures retain
+the older backups and are reported without rolling back a successful update.
+
+The bootstrap, command-line worker, web updater and recovery share an exclusive
+installation lock. A second update exits before downloading or changing the
+installation. The daemon also holds its own singleton lock for its lifetime.
 
 Plan a maintenance window: all Mailcow services pause during the cold backup and
 checks, and backup duration depends on mailbox size. Other mail servers retry
