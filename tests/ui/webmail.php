@@ -41,12 +41,20 @@ $row = ['local_part' => 'Alex', 'domain' => 'example.org', 'name' => 'Alex', 'pa
 $batch = \Mailcow\Mailbox\BatchCreator::prepare([$row]);
 verify($batch[0]['local_part'] === 'alex' && $batch[0]['password'] === $batch[0]['password2'], 'Batch preserves passwords and normalizes addresses');
 verify($batch[0]['sogo_access'] === 1 && $batch[0]['authsource'] === 'mailcow', 'Batch uses normal webmail/authentication defaults');
-foreach ([[], array_fill(0, 51, $row), [$row, $row], [array_merge($row, ['password' => 'weak'])],
-          [array_merge($row, ['local_part' => '../invalid'])], [array_merge($row, ['quota' => -1])]] as $invalid) {
+foreach ([[], array_fill(0, 51, $row), [$row, $row], [array_merge($row, ['password' => []])],
+          [array_merge($row, ['local_part' => '../invalid'])]] as $invalid) {
     $rejected = false;
     try { \Mailcow\Mailbox\BatchCreator::prepare($invalid); } catch (InvalidArgumentException $error) { $rejected = true; }
-    verify($rejected, 'Malformed, duplicate, weak or excessive batches are rejected before any creation callback');
+    verify($rejected, 'Malformed, duplicate or excessive batches are rejected before any creation callback');
 }
+$mixed = \Mailcow\Mailbox\BatchCreator::prepare([
+    array_merge($row, ['local_part' => 'short', 'password' => 'weak']),
+    $row,
+    array_merge($row, ['local_part' => 'quota', 'quota' => -1]),
+]);
+verify(str_contains($mixed[0]['validation_error'], 'minimum 16'), 'A short password has a specific row error');
+verify(!isset($mixed[1]['validation_error']) && $mixed[1]['password'] === $row['password'], 'Valid rows survive another row failing validation');
+verify(str_contains($mixed[2]['validation_error'], 'Quota'), 'Invalid quotas have a specific row error');
 
 // Roundcube plugin test doubles: no real mail services or credentials.
 class rcube_plugin { public function add_hook(...$args) {} }

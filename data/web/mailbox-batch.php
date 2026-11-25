@@ -30,16 +30,23 @@ try {
 }
 $results = [];
 foreach ($rows as $row) {
+    $address = $row['local_part'].'@'.$row['domain'];
+    if (isset($row['validation_error'])) {
+        $results[] = ['address' => $address, 'created' => false, 'message' => 'Not created. '.$row['validation_error']];
+        continue;
+    }
     $_SESSION['return'] = [];
     try {
         $ok = mailbox('add', 'mailbox', $row) !== false;
         $messages = $_SESSION['return'] ?? [];
-        foreach ($messages as $message) if (in_array($message['type'] ?? '', ['danger', 'error'], true)) $ok = false;
-        $results[] = ['address' => $row['local_part'].'@'.$row['domain'], 'created' => $ok,
-                      'message' => $ok ? 'Created' : 'Not created. Check domain limits, password policy, or whether the mailbox already exists.'];
+        $errors = array_values(array_filter($messages, static fn($message) => in_array($message['type'] ?? '', ['danger', 'error'], true)));
+        if ($errors) $ok = false;
+        $details = $errors ? array_column(alertbox_log_parser(['return' => $errors]) ?: [], 'msg') : [];
+        $results[] = ['address' => $address, 'created' => $ok,
+                      'message' => $ok ? 'Created' : 'Not created. '.($details ? implode(' ', $details) : 'Check domain limits, password policy, or whether the mailbox already exists.')];
     } catch (\Throwable $e) {
-        $results[] = ['address' => $row['local_part'].'@'.$row['domain'], 'created' => false,
-                      'message' => 'Creation failed. Check mailbox inventory before retrying this row.'];
+        $results[] = ['address' => $address, 'created' => false, 'outcome' => 'unconfirmed',
+                      'message' => 'Outcome unconfirmed. Check mailbox inventory before retrying this row.'];
         // Stop on an unexpected failure; do not blindly retry a possibly committed operation.
         break;
     }

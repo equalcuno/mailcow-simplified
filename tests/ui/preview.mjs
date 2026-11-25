@@ -60,6 +60,19 @@ export async function startPreview(port = 0) {
     try {
       if (url.pathname === '/server-update.php') return send({ ready: false, busy: false, candidate: null, message: 'Local preview: host upgrades are disabled.' });
       if (url.pathname === '/mailbox-batch.php') return send({ message: 'Local preview: mailbox creation is disabled.' }, 'application/json', 403);
+      if (url.pathname === '/inc/ajax/dns_diagnostics.php' && url.searchParams.get('format') === 'json') {
+        const domain = url.searchParams.get('domain'), ready = domain === 'studio.co.za';
+        const records = [
+          { name: 'mail.example.org', type: 'A', expected: '192.0.2.10', current: ['192.0.2.10'], required: true, status: 'complete' },
+          { name: '10.2.0.192.in-addr.arpa', type: 'PTR', expected: 'mail.example.org', current: ['mail.example.org'], required: true, status: 'complete' },
+          { name: domain, type: 'MX', expected: 'mail.example.org', current: ready ? ['mail.example.org'] : [], required: true, status: ready ? 'complete' : 'missing' },
+          { name: domain, type: 'TXT', expected: 'v=spf1 mx -all', current: ['v=spf1 mx ~all'], required: true, status: 'complete' },
+          { name: 'dkim._domainkey.' + domain, type: 'TXT', expected: 'v=DKIM1; k=rsa; p=' + 'PublicKeyFixture'.repeat(24), current: ready ? ['v=DKIM1; k=rsa; p=' + 'PublicKeyFixture'.repeat(24)] : [], required: true, status: ready ? 'complete' : 'missing' },
+          { name: '_dmarc.' + domain, type: 'TXT', expected: 'v=DMARC1; p=none', current: ready ? ['v=DMARC1; p=reject'] : [], required: true, status: ready ? 'complete' : 'missing' },
+          { name: 'autoconfig.' + domain, type: 'CNAME', expected: 'mail.example.org', current: [], required: false, status: 'missing' },
+        ];
+        return send({ domain, enabled: true, ready, records, required: 6, complete: ready ? 6 : 3, checked_at: Math.floor(Date.now() / 1000) });
+      }
       if (url.pathname.startsWith('/api/v1/') || url.pathname.startsWith('/inc/ajax/')) {
         let raw = '';
         for await (const part of req) raw += part;

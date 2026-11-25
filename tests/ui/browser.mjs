@@ -99,6 +99,8 @@ try {
   await page.screenshot({ path: join(output, 'login.png'), fullPage: true });
   // New components run against the same real browser and isolated API fixture.
   await page.setCookie({ url: preview.url, name: 'mailcow_components', value: 'redesigned' });
+  await page.emulateMediaFeatures([{ name: 'prefers-color-scheme', value: 'light' }]);
+  await page.evaluate(() => localStorage.setItem('mailcow_theme', 'light'));
   for (const width of [390, 1440]) {
     await page.setViewport({ width, height: 844 });
     await page.goto(preview.url + '/admin/mailbox?viewport=' + width + '#tab-mailboxes', { waitUntil: 'networkidle0' });
@@ -112,9 +114,32 @@ try {
     await page.click('#p-create-mailbox [data-p-bulk-create] > summary');
     await page.type('[data-p-bulk-input]', 'first, First User\nsecond, Second User');
     await page.click('[data-p-bulk-preview]');
-    assert.equal(await page.$$eval('.p-bulk-row input', inputs => inputs.filter(input => /^[a-f0-9]{32}$/.test(input.value)).length), 2, await page.$eval('[data-p-bulk-status]', el => el.textContent));
+    assert.equal(await page.$$eval('.p-bulk-row input', inputs => inputs.filter(({ value }) => value.length >= 32 && /[a-z]/.test(value) && /[A-Z]/.test(value) && /\d/.test(value) && /[^a-zA-Z\d]/.test(value)).length), 2, await page.$eval('[data-p-bulk-status]', el => el.textContent));
     assert.ok(await page.evaluate(() => document.querySelector('#p-create-mailbox').scrollWidth <= document.querySelector('#p-create-mailbox').clientWidth + 1), 'Bulk form fits its dialog on mobile');
     await page.screenshot({ path: join(output, `redesigned-create-${width}.png`) });
+    await page.$eval('.p-bulk-row input', input => { input.value = 'short'; input.dispatchEvent(new Event('input', { bubbles: true })); });
+    assert.ok(await page.$eval('.p-bulk-row', row => row.textContent.includes('minimum 16')));
+    await page.$eval('#p-create-mailbox', dialog => { dialog.scrollTop = dialog.scrollHeight; });
+    await page.screenshot({ path: join(output, `mailbox-validation-${width}.png`) });
+    await page.keyboard.press('Escape');
+    await page.click('.p-list-toolbar [data-p-task="tab-domains"]');
+    await page.waitForFunction(() => document.querySelector('[data-p-domain-name]')?.textContent === 'Setup needed');
+    await page.screenshot({ path: join(output, `domain-status-${width}.png`), fullPage: true });
+    await page.click('.p-domain-setup-link');
+    await page.waitForSelector('[data-p-domain-setup][open] .p-dns-table');
+    assert.ok(await page.$eval('[data-p-setup-summary]', el => el.textContent.includes('3 / 6 required checks')));
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), 'Domain setup has no page overflow');
+    assert.ok(await page.$eval('[data-p-domain-setup]', dialog => dialog.scrollWidth <= dialog.clientWidth + 1), 'Long DKIM values stay inside the setup dialog');
+    if (width === 1440) assert.ok(await page.$eval('.p-dns-table', table => table.scrollWidth <= table.clientWidth + 1), 'All DNS columns fit the desktop panel');
+    await page.screenshot({ path: join(output, `domain-setup-${width}.png`) });
+    if (width === 1440) {
+      await page.evaluate(() => document.getElementById('dark-mode-toggle').click());
+      await page.waitForSelector('html[data-plates-dark]');
+      await page.screenshot({ path: join(output, 'domain-setup-dark.png') });
+      await page.evaluate(() => document.getElementById('dark-mode-toggle').click());
+    }
+    await page.click('[data-p-setup-refresh]');
+    await page.waitForSelector('[data-p-setup-records][aria-busy="false"] .p-dns-table');
     await page.keyboard.press('Escape');
   }
   await page.goto(preview.url + '/admin/dashboard', { waitUntil: 'networkidle0' });

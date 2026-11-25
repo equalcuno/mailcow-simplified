@@ -51,6 +51,23 @@ do not replace login, MFA, permissions or CSRF. Advanced configuration stays ava
 in an expandable section using upstream templates, so the full feature set remains
 accessible. `@upstream` always addresses those templates directly.
 
+Domain rows offer **Domain setup** with expected and observed DNS values, required
+checks, recommended client-discovery records, and **Recheck DNS**. A newly added
+domain opens this panel after the native create flow reloads. The displayed status
+stays **Setup needed** until the mail host's address/reverse DNS, primary MX, SPF,
+DKIM and DMARC checks pass. Disabled domains remain inactive. This readiness display
+does not change the native enabled flag or disable existing mail service. Checks
+reuse the existing permission-checked DNS diagnostics endpoint with `format=json`,
+cache observations for five minutes, and can be rechecked immediately. Lookup failures
+never count as completed checks. Storage figures in the domain list use MiB/GiB.
+
+Bulk mailbox creation shows password errors during review and reports results per
+row. Invalid password/name/quota values do not stop other valid rows. Structural,
+CSRF and domain-permission checks still run before any writes. Explicit preflight
+rejections show **Not created**; interrupted writes remain **Outcome unconfirmed**.
+Confirmed successful rows are retained for credential export and excluded from
+subsequent submissions in the same dialog.
+
 The fork adds small hooks in `inc/twig.inc.php`, `templates/base.twig`, and
 `templates/admin.twig`, plus admin form handling in `inc/triggers.admin.inc.php`.
 Template source freshness is checked so component switches/deployments do not serve

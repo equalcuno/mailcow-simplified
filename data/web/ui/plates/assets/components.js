@@ -39,6 +39,9 @@
       const confirmation = form.querySelector('[name="password2"]');
       if (confirmation) confirmation.setCustomValidity(password.value === confirmation.value ? '' : confirmation.dataset.mismatch || 'Passwords do not match');
       if (!form.reportValidity()) { event.preventDefault(); event.stopImmediatePropagation(); }
+      else if (action.dataset.apiUrl === 'add/domain') {
+        try { sessionStorage.setItem('plates:setup-domain', form.querySelector('[name="domain"]').value.trim().toLowerCase()); } catch (_) {}
+      }
     }, true);
     document.addEventListener('input', event => {
       const form = event.target.closest('form[data-p-validate]');
@@ -55,7 +58,8 @@
   function randomPassword() {
     const bytes = new Uint8Array(16);
     crypto.getRandomValues(bytes);
-    return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
+    // Retain 128 random bits and include every character class required by native policies.
+    return 'aA1!' + Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
   }
 
   function bulkMailboxes(root) {
@@ -68,6 +72,10 @@
     const download = root.querySelector('[data-p-bulk-export]');
     let rows = [], sending = false;
     const credentials = new Map();
+    const passwordError = password => {
+      const length = new Blob([password]).size;
+      return length < 16 ? 'Password is too short (minimum 16).' : length > 256 ? 'Password is too long (maximum 256).' : '';
+    };
     const invalidate = () => { if (sending) return; rows = []; results.replaceChildren(); submit.disabled = true; download.disabled = credentials.size === 0; };
     for (const input of [source, domain, quota]) input.addEventListener('input', invalidate);
     root.querySelector('[data-p-bulk-preview]').addEventListener('click', () => {
@@ -86,24 +94,34 @@
           if (!Array.from(domain.options).some(option => option.value === address.slice(at + 1))) throw new Error('Choose an available domain on line ' + (index + 1));
           const name = parts[1] || '';
           seen.add(address);
+          const previous = credentials.get(address);
           return { address, local_part: address.slice(0, at), domain: address.slice(at + 1), name,
-                   quota: Number(quota.value), password: parts[2] || randomPassword(), created: false };
+                   quota: Number(quota.value), password: previous?.password || parts[2] || randomPassword(), created: !!previous };
         });
         for (const row of rows) {
           const line = document.createElement('div'); line.className = 'p-bulk-row';
           const identity = document.createElement('span'); identity.textContent = row.address;
           const password = document.createElement('input'); password.type = 'password'; password.value = row.password; password.autocomplete = 'new-password'; password.setAttribute('aria-label', 'Password for ' + row.address);
-          password.addEventListener('input', () => { row.password = password.value; });
-          const state = document.createElement('span'); state.textContent = 'Ready'; state.setAttribute('role', 'status');
+          password.disabled = row.created;
+          const state = document.createElement('span'); state.textContent = row.created ? 'Already created' : passwordError(row.password) || 'Ready'; state.setAttribute('role', 'status');
+          state.className = row.created ? 'p-bulk-success' : passwordError(row.password) ? 'p-bulk-error' : '';
+          password.setAttribute('aria-invalid', String(!!passwordError(row.password)));
+          password.addEventListener('input', () => {
+            row.password = password.value;
+            const error = passwordError(row.password);
+            state.textContent = error || 'Ready'; state.className = error ? 'p-bulk-error' : '';
+            password.setAttribute('aria-invalid', String(!!error));
+          });
           row.node = line; row.state = state; row.passwordInput = password;
           line.append(identity, password, state); results.append(line);
         }
-        submit.disabled = false; status.textContent = rows.length + ' mailboxes ready for review. Passwords remain in this browser until you close the dialog.';
+        submit.disabled = rows.every(row => row.created); status.textContent = rows.length + ' mailboxes reviewed. Valid rows will be created; invalid rows will show errors. Passwords remain in this browser until you close the dialog.';
       } catch (error) { invalidate(); status.textContent = error.message; }
     });
     submit.addEventListener('click', async () => {
       if (sending || !rows.length) return;
       sending = true; submit.disabled = true;
+      let rejected = false;
       for (const input of root.querySelectorAll('input, textarea, select, button')) input.disabled = true;
       try {
         const pending = rows.filter(row => !row.created);
@@ -111,19 +129,25 @@
           body: JSON.stringify({ csrf_token: window.csrf_token, rows: pending.map(({ local_part, domain, name, quota, password }) => ({ local_part, domain, name, quota, password })) }) });
         const data = await response.json();
         if (data.csrf_token) window.csrf_token = data.csrf_token;
+        rejected = !response.ok && response.status >= 400 && response.status < 500;
         if (!response.ok || !Array.isArray(data.results)) throw new Error(data.message || 'Batch failed; check mailbox inventory before retrying.');
         for (const row of pending) {
           const result = data.results.find(result => result.address === row.address);
           row.created = result?.created === true;
+          row.unconfirmed = result?.outcome === 'unconfirmed';
           if (row.created) credentials.set(row.address, { address: row.address, name: row.name, password: row.password });
           row.state.textContent = result?.message || 'Not processed';
+          row.state.className = row.created ? 'p-bulk-success' : 'p-bulk-error';
         }
-        status.textContent = rows.filter(row => row.created).length + ' / ' + rows.length + ' mailboxes created. Download the created credentials before leaving.';
+        const created = rows.filter(row => row.created).length;
+        const unconfirmed = rows.some(row => row.unconfirmed);
+        status.textContent = created + ' / ' + rows.length + ' mailboxes created.' + (created ? ' Download the created credentials before leaving.' : '')
+          + (unconfirmed ? ' Check mailbox inventory for unconfirmed rows before retrying.' : created < rows.length ? ' See the error beside each remaining mailbox.' : '');
         // Reuse the existing list refresh without reloading or losing generated credentials.
         document.querySelector('[data-p-refresh]')?.click();
       } catch (error) {
-        status.textContent = error.message + ' Check inventory before submitting another batch.';
-        rows.forEach(row => { if (!row.created) row.state.textContent = 'Outcome unconfirmed'; });
+        status.textContent = error.message + (rejected ? ' No mailboxes were created by this request.' : ' Check inventory before submitting another batch.');
+        rows.forEach(row => { if (!row.created) { row.state.textContent = rejected ? 'Not created. ' + error.message : 'Outcome unconfirmed'; row.state.className = 'p-bulk-error'; } });
       } finally {
         sending = false;
         for (const input of root.querySelectorAll('input, textarea, select, button')) input.disabled = false;
@@ -172,6 +196,95 @@
       return node;
     };
     const icon = name => { const node = element('i', 'bi bi-' + name); node.setAttribute('aria-hidden', 'true'); return node; };
+    const setupDialog = document.querySelector('[data-p-domain-setup]');
+    const setupData = new Map(), setupRequests = new Map();
+    let setupDomain = '', setupSequence = 0;
+    function domainStatus(name, data, failed = false) {
+      root.querySelectorAll('[data-p-domain-name]').forEach(status => {
+        if (status.dataset.pDomainName !== name) return;
+        const enabled = data ? data.enabled : status.dataset.pEnabled === 'true';
+        status.textContent = !enabled ? copy.inactive : failed ? 'Check needed' : !data ? 'Checking DNS' : data.ready ? copy.active : 'Setup needed';
+        status.className = 'p-status ' + (!enabled ? 'p-status-inactive' : data?.ready ? 'p-status-active' : 'p-status-pending');
+      });
+    }
+    async function checkDomain(name, refresh = false) {
+      if (setupRequests.has(name)) {
+        if (!refresh) return setupRequests.get(name);
+        try { await setupRequests.get(name); } catch (_) { /* An explicit recheck starts a fresh request. */ }
+      }
+      domainStatus(name, null);
+      const request = (async () => {
+        try {
+          const response = await fetch('/inc/ajax/dns_diagnostics.php?' + new URLSearchParams({ domain: name, format: 'json', ...(refresh ? { refresh: '1' } : {}) }), { credentials: 'same-origin' });
+          const data = await response.json();
+          if (!response.ok || data.domain !== name || !Array.isArray(data.records) || typeof data.ready !== 'boolean' || typeof data.enabled !== 'boolean') throw new Error(data.message || 'DNS checks are unavailable.');
+          if (!data.records.every(record => record && typeof record.name === 'string' && typeof record.type === 'string' && typeof record.expected === 'string'
+            && Array.isArray(record.current) && record.current.every(value => typeof value === 'string') && typeof record.required === 'boolean'
+            && ['complete', 'missing', 'mismatch', 'unconfirmed'].includes(record.status))) throw new Error('Invalid DNS check response.');
+          const required = data.records.filter(record => record.required), complete = required.filter(record => record.status === 'complete').length;
+          if (required.length !== data.required || complete !== data.complete || data.ready !== (required.length > 0 && complete === required.length)) throw new Error('Incomplete DNS check response.');
+          setupData.set(name, data); domainStatus(name, data);
+          return data;
+        } catch (error) {
+          setupData.delete(name); domainStatus(name, null, true); throw error;
+        } finally { setupRequests.delete(name); }
+      })();
+      setupRequests.set(name, request);
+      return request;
+    }
+    function renderSetup(data) {
+      const summary = setupDialog.querySelector('[data-p-setup-summary]');
+      summary.textContent = data.complete + ' / ' + data.required + ' required checks complete. '
+        + (!data.enabled ? 'This domain is disabled. Enable it in domain settings when ready.' : data.ready ? 'Setup complete. This domain is active.' : 'Setup needed. Complete the required records below.');
+      const table = element('table', 'p-dns-table'), header = element('tr');
+      for (const label of ['Record', 'Type', 'Expected value', 'Current value', 'Status']) header.append(element('th', '', label));
+      const head = element('thead'); head.append(header); table.append(head);
+      const body = element('tbody');
+      for (const record of data.records) {
+        const tr = element('tr'), name = element('td');
+        name.append(element('code', '', record.name), element('small', '', record.required ? 'Required' : 'Recommended'));
+        tr.append(name, element('td', '', record.type));
+        for (const value of [record.expected || 'Could not determine the server address.', record.current.join('\n') || 'No record found']) {
+          const td = element('td'); td.append(element('code', '', value)); tr.append(td);
+        }
+        const state = element('td');
+        state.append(element('span', 'p-status ' + (record.status === 'complete' ? 'p-status-active' : 'p-status-pending'), { complete: 'Done', missing: 'Missing', mismatch: 'Needs change', unconfirmed: 'Check needed' }[record.status] || 'Check needed'));
+        tr.append(state); body.append(tr);
+      }
+      table.append(body); setupDialog.querySelector('[data-p-setup-records]').replaceChildren(table);
+      setupDialog.querySelector('[data-p-setup-checked]').textContent = 'Last checked ' + new Date(data.checked_at * 1000).toLocaleString() + '. Checks are cached for up to 5 minutes; Recheck DNS checks again now.';
+    }
+    async function openSetup(name, refresh = false) {
+      if (!setupDialog) return;
+      setupDomain = name;
+      const current = ++setupSequence;
+      setupDialog.querySelector('[data-p-setup-domain]').textContent = name;
+      setupDialog.querySelector('[data-p-setup-settings]').href = '/edit/domain/' + encodeURIComponent(name);
+      if (!setupDialog.open) setupDialog.showModal();
+      const panel = setupDialog.querySelector('[data-p-setup-records]'), button = setupDialog.querySelector('[data-p-setup-refresh]');
+      panel.setAttribute('aria-busy', 'true'); button.disabled = true;
+      setupDialog.querySelector('[data-p-setup-summary]').textContent = 'Checking DNS records…';
+      panel.replaceChildren(); setupDialog.querySelector('[data-p-setup-checked]').textContent = '';
+      try {
+        const data = !refresh && setupData.has(name) && !setupRequests.has(name) ? setupData.get(name) : await checkDomain(name, refresh);
+        if (current === setupSequence) renderSetup(data);
+      } catch (error) {
+        if (current === setupSequence) setupDialog.querySelector('[data-p-setup-summary]').textContent = error.message + ' Use Recheck DNS to try again. This domain has not been confirmed ready.';
+      } finally {
+        if (current === setupSequence) { panel.setAttribute('aria-busy', 'false'); button.disabled = false; }
+      }
+    }
+    setupDialog?.querySelector('[data-p-setup-refresh]').addEventListener('click', () => openSetup(setupDomain, true));
+    async function checkVisibleDomains(items, current) {
+      const queue = [...items];
+      const worker = async () => {
+        while (queue.length && current === sequence && task === 'tab-domains') {
+          const item = queue.shift();
+          try { await checkDomain(item.domain_name); } catch (_) { /* Each row offers the setup panel and a retry. */ }
+        }
+      };
+      await Promise.all([worker(), worker()]);
+    }
     const bytes = value => {
       const number = Number(value);
       if (!Number.isFinite(number)) return String(value ?? '—');
@@ -197,7 +310,7 @@
       link.href = target;
       text.append(link, element('span', 'p-row-subtitle', sub || '—'));
       identity.append(text);
-      const status = element('span', Number(item.active) === 1 ? 'p-status p-status-active' : 'p-status p-status-inactive', Number(item.active) === 1 ? copy.active : copy.inactive);
+      const status = element(kind === 'domain' ? 'button' : 'span', Number(item.active) === 1 ? 'p-status p-status-active' : 'p-status p-status-inactive', Number(item.active) === 1 ? copy.active : copy.inactive);
       const detail = element('div', 'p-row-detail');
       if (kind === 'mailbox') {
         detail.append(element('span', '', bytes(item.quota_used) + ' / ' + (Number(item.quota) === 0 ? '∞' : bytes(item.quota))), element('div', 'p-storage-meter'));
@@ -206,10 +319,17 @@
         detail.lastChild.append(fill);
         detail.setAttribute('aria-label', copy.storage + ': ' + used + '%');
       } else if (kind === 'domain') {
+        status.type = 'button'; status.dataset.pDomainName = item.domain_name; status.dataset.pEnabled = String(Number(item.active) === 1);
+        status.className = 'p-status ' + (Number(item.active) === 1 ? 'p-status-pending' : 'p-status-inactive');
+        status.textContent = Number(item.active) === 1 ? 'Checking DNS' : copy.inactive;
+        status.setAttribute('aria-label', 'Domain setup for ' + label);
+        status.addEventListener('click', () => openSetup(item.domain_name));
         const count = element('button', 'p-domain-count', (item.mboxes_in_domain ?? 0) + ' ' + copy.mailboxes);
         count.type = 'button'; count.title = copy.open_mailboxes;
         count.addEventListener('click', () => { domain.value = item.domain_name; saveDomain(); search.value = ''; select('tab-mailboxes', true); });
-        detail.append(count, element('span', 'p-row-subtitle', item.quota_used_in_domain || '—'));
+        const setup = element('button', 'p-domain-setup-link', 'Domain setup'); setup.type = 'button';
+        setup.addEventListener('click', () => openSetup(item.domain_name));
+        detail.append(count, element('span', 'p-row-subtitle', item.quota_used_in_domain == null ? '—' : bytes(item.quota_used_in_domain)), setup);
       } else detail.append(element('span', 'p-row-subtitle', item.public_comment || ''));
       const edit = element('a', 'p-row-open'); edit.href = target; edit.setAttribute('aria-label', copy.edit + ' ' + label); edit.append(icon('arrow-up-right'));
       node.append(identity, detail, status, edit);
@@ -256,6 +376,7 @@
         if (!rows.length) textState(filtered ? copy.no_results : copy.empty_title, filtered ? copy.no_results_hint : copy.empty_hint);
         else results.replaceChildren(...rows.map(row));
         footer();
+        if (kind === 'domain') void checkVisibleDomains(rows, current);
       } catch (error) {
         if (error.name !== 'AbortError' && current === sequence) { total = 0; textState(copy.load_error, '', 'exclamation-circle'); footer(); }
       } finally { if (current === sequence) results.setAttribute('aria-busy', 'false'); }
@@ -320,6 +441,10 @@
     });
     let remembered; try { remembered = sessionStorage.getItem('plates-task:' + location.pathname); } catch (_) {}
     select(taskFromFragment(location.hash.slice(1)) || remembered || 'tab-domains');
+    try {
+      const added = sessionStorage.getItem('plates:setup-domain'); sessionStorage.removeItem('plates:setup-domain');
+      if (added && Array.from(domain.options).some(option => option.value === added)) void openSetup(added);
+    } catch (_) {}
     // Browsers can reveal a details ancestor while resolving an old #tab-* URL.
     // The selected core view owns those fragments in the redesigned interface.
     window.addEventListener('load', () => {

@@ -11,12 +11,15 @@ const file = name => readFile(join(root, name), 'utf8');
 const pause = () => new Promise(resolve => setTimeout(resolve, 70));
 let checks = 0;
 const check = (condition, message) => { assert.ok(condition, message); checks++; };
+const strongPassword = value => value.length >= 32 && /[a-z]/.test(value) && /[A-Z]/.test(value) && /\d/.test(value) && /[^a-zA-Z\d]/.test(value);
 
 async function open(name, path, options = {}) {
   const window = new Window({ url: 'http://localhost' + path, settings: { enableJavaScriptEvaluation: true, suppressInsecureJavaScriptEnvironmentWarning: true, disableCSSFileLoading: true, disableJavaScriptFileLoading: true } });
   const html = (await readFile(join(output, name + '.html'), 'utf8')).replace(/<script\b(?![^>]*type="application\/json")[^>]*>[\s\S]*?<\/script>/gi, '');
   window.document.write(html); window.document.close();
   const requests = [], errors = [];
+  const batchResponse = options.batchResponse;
+  const setupResponse = options.setupResponse;
   for (const [key, value] of Object.entries(options.storage || {})) window.localStorage.setItem(key, value);
   window.csrf_token = 'fixture-csrf-token';
   let updateBusy = false;
@@ -28,7 +31,11 @@ async function open(name, path, options = {}) {
       if (options.method === 'POST') updateBusy = true;
       return { ok: true, json: async () => ({ ready: !updateBusy, busy: updateBusy, candidate: 'a'.repeat(40), csrf_token: 'update-csrf', message: updateBusy ? 'Update queued' : 'Update available' }) };
     }
-    if (url === '/mailbox-batch.php') return { ok: true, json: async () => ({ csrf_token: 'rotated-csrf', results: JSON.parse(options.body).rows.map((row, i) => ({ address: row.local_part + '@' + row.domain, created: i === 0, message: i === 0 ? 'Created' : 'Already exists' })) }) };
+    if (url === '/mailbox-batch.php') return batchResponse ? batchResponse(JSON.parse(options.body)) : { ok: true, json: async () => ({ csrf_token: 'rotated-csrf', results: JSON.parse(options.body).rows.map((row, i) => ({ address: row.local_part + '@' + row.domain, created: i === 0, message: i === 0 ? 'Created' : 'Already exists' })) }) };
+    if (url.startsWith('/inc/ajax/dns_diagnostics.php?')) {
+      const domain = new URL(url, window.location.href).searchParams.get('domain');
+      return setupResponse ? setupResponse(url, domain) : { ok: true, json: async () => ({ domain, enabled: true, ready: false, required: 1, complete: 0, checked_at: 123, records: [{ name: domain, type: 'MX', expected: 'mail.example.org', current: [], required: true, status: 'missing' }] }) };
+    }
     if (url === '/api/v1/get/overview') return { ok: true, json: async () => JSON.parse(await readFile(join(output, 'overview.json'), 'utf8')) };
     let data = [];
     const body = JSON.parse(options.body || '{}');
@@ -115,12 +122,12 @@ try {
   check(dialog.querySelector('[data-p-bulk-domain]').value === 'studio.co.za', 'Create dialog inherits the saved domain');
   dialog.querySelector('[data-p-generate-password]').click();
   const password = dialog.querySelector('[name="password"]').value;
-  check(/^[a-f0-9]{32}$/.test(password) && dialog.querySelector('[name="password2"]').value === password, 'Generator supplies a matching 128-bit hexadecimal password');
+  check(strongPassword(password) && dialog.querySelector('[name="password2"]').value === password, 'Generator supplies matching strong passwords with every native character class');
   const source = dialog.querySelector('[data-p-bulk-input]');
   source.value = 'first, First User\nsecond, Second User';
   dialog.querySelector('[data-p-bulk-preview]').click();
   const secrets = [...dialog.querySelectorAll('.p-bulk-row input')].map(input => input.value);
-  check(secrets.length === 2 && secrets.every(value => /^[a-f0-9]{32}$/.test(value)) && secrets[0] !== secrets[1], 'Bulk review generates an independent strong password for every row');
+  check(secrets.length === 2 && secrets.every(strongPassword) && secrets[0] !== secrets[1], 'Bulk review generates an independent strong password for every row');
   check(!requests.some(r => r.url === '/mailbox-batch.php'), 'Review does not create mailboxes');
   dialog.querySelector('[data-p-bulk-submit]').click(); await pause();
   const batch = requests.find(r => r.url === '/mailbox-batch.php');
@@ -129,16 +136,71 @@ try {
   check(window.csrf_token === 'rotated-csrf', 'Batch consumes the rotated CSRF token');
   check(dialog.querySelector('[data-p-bulk-submit]').disabled && !dialog.querySelector('[data-p-bulk-export]').disabled, 'Partial success enables credential export and prevents automatic retries');
   check(dialog.querySelectorAll('.p-bulk-row input:disabled').length === 1, 'Only confirmed created passwords become immutable');
+  dialog.querySelector('[data-p-bulk-preview]').click();
+  check(dialog.querySelector('.p-bulk-row input').disabled && dialog.querySelector('.p-bulk-row').textContent.includes('Already created'), 'Review preserves previously created rows and their passwords');
+  dialog.querySelector('[data-p-bulk-submit]').click(); await pause();
+  check(JSON.parse(requests.filter(r => r.url === '/mailbox-batch.php').at(-1).options.body).rows.every(row => row.local_part !== 'first'), 'Another explicit review never submits confirmed successes again');
   source.value = 'third, Third User'; source.dispatchEvent(new window.Event('input'));
   dialog.querySelector('[data-p-bulk-preview]').click();
   check(!dialog.querySelector('[data-p-bulk-export]').disabled, 'Another review preserves prior successful credentials for export');
   source.value = 'foreign@unavailable.example';
   dialog.querySelector('[data-p-bulk-preview]').click();
-  check(dialog.querySelector('[data-p-bulk-submit]').disabled && requests.filter(r => r.url === '/mailbox-batch.php').length === 1, 'Unavailable domains fail review without another write');
+  check(dialog.querySelector('[data-p-bulk-submit]').disabled && requests.filter(r => r.url === '/mailbox-batch.php').length === 2, 'Unavailable domains fail review without another write');
   dialog.close();
   check(!source.value && dialog.querySelector('[data-p-bulk-export]').disabled, 'Closing clears generated credentials from the dialog');
   check(![...Array(window.localStorage.length)].map((_, i) => window.localStorage.getItem(window.localStorage.key(i))).some(value => value.includes(secrets[0])), 'Generated credentials never enter persistent browser storage');
 } finally { await bulk.window.happyDOM.close(); }
+
+for (const scenario of ['mixed', 'rejected', 'network', 'invalid-json', 'server-error']) {
+  const fixture = await open('admin', '/admin/mailbox#domains', { batchResponse: async payload => {
+    if (scenario === 'network') throw new Error('Network connection lost');
+    if (scenario === 'invalid-json') return { ok: false, status: 502, json: async () => { throw new Error('Invalid JSON'); } };
+    if (scenario === 'server-error') return { ok: false, status: 500, json: async () => ({ message: 'Server error' }) };
+    if (scenario === 'rejected') return { ok: false, status: 422, json: async () => ({ message: 'Invalid mailbox batch.' }) };
+    return { ok: true, json: async () => ({ results: payload.rows.map(row => ({ address: row.local_part + '@' + row.domain, created: row.password.length >= 16, message: row.password.length >= 16 ? 'Created' : 'Not created. Password is too short (minimum 16).' })) }) };
+  } });
+  try {
+    const { document } = fixture;
+    document.querySelector('[data-p-task="tab-mailboxes"]').click(); await pause();
+    document.querySelector('[data-p-create]').click();
+    document.querySelector('[data-p-bulk-input]').value = 'short, Short User, weak\nvalid, Valid User';
+    document.querySelector('[data-p-bulk-preview]').click();
+    check(document.querySelector('.p-bulk-row').textContent.includes('minimum 16'), 'Review identifies short passwords before submission');
+    document.querySelector('[data-p-bulk-submit]').click(); await pause();
+    const states = [...document.querySelectorAll('.p-bulk-row [role="status"]')].map(node => node.textContent);
+    if (scenario === 'mixed') {
+      check(states[0].includes('minimum 16') && states[1] === 'Created', 'A mixed batch shows its password error beside the successful row');
+      check(!document.querySelector('[data-p-bulk-export]').disabled, 'The valid row enables credential export');
+    } else if (scenario === 'rejected') {
+      check(states.every(state => state.startsWith('Not created.')) && document.querySelector('[data-p-bulk-status]').textContent.includes('No mailboxes were created'), 'An explicit preflight rejection is confirmed not created');
+    } else {
+      check(states.every(state => state === 'Outcome unconfirmed'), 'Transport, malformed responses and server failures keep outcomes unconfirmed');
+    }
+    check(document.querySelector('[data-p-bulk-submit]').disabled, 'Failed requests cannot be retried without another review');
+  } finally { await fixture.window.happyDOM.close(); }
+}
+
+let setupReady = false, setupFailure = false;
+const setupFixture = await open('admin', '/admin/mailbox#domains', { setupResponse: async (url, domain) => {
+  if (setupFailure) throw new Error('DNS unavailable');
+  return { ok: true, json: async () => ({ domain, enabled: true, ready: setupReady, required: 1, complete: Number(setupReady), checked_at: 123,
+    records: [{ name: '<script>untrusted</script>', type: 'MX', expected: 'mail.example.org', current: setupReady ? ['mail.example.org'] : [], required: true, status: setupReady ? 'complete' : 'missing' }] }) };
+} });
+try {
+  const { document, requests } = setupFixture;
+  check(document.querySelector('[data-p-domain-name]').textContent === 'Setup needed', 'An enabled domain with incomplete DNS is not shown as active');
+  document.querySelector('.p-domain-setup-link').click(); await pause();
+  const panel = document.querySelector('[data-p-domain-setup]');
+  check(panel.open && panel.textContent.includes('0 / 1 required checks') && panel.textContent.includes('Missing'), 'Domain setup shows required records and completion');
+  check(!panel.querySelector('script') && panel.textContent.includes('<script>untrusted</script>'), 'DNS values render as text');
+  setupReady = true;
+  panel.querySelector('[data-p-setup-refresh]').click(); await pause();
+  check(panel.textContent.includes('Setup complete') && document.querySelector('[data-p-domain-name]').textContent === 'Active', 'A successful recheck updates the panel and domain status');
+  check(requests.some(request => request.url.includes('format=json') && request.url.includes('refresh=1')), 'Recheck bypasses the DNS result cache');
+  setupFailure = true;
+  panel.querySelector('[data-p-setup-refresh]').click(); await pause();
+  check(panel.textContent.includes('not been confirmed ready') && document.querySelector('[data-p-domain-name]').textContent === 'Check needed', 'A failed recheck cannot retain a green active status');
+} finally { await setupFixture.window.happyDOM.close(); }
 
 const login = await open('login-admin', '/admin');
 try {

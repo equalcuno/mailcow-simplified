@@ -45,6 +45,9 @@ jobs:
           php tests/ui/render.php
           php tests/ui/metrics.php
           php tests/ui/webmail.php
+          php tests/ui/notifications.php
+          php tests/ui/domain-setup.php
+          php tests/ui/mailbox-requests.php
       - name: Install browser test dependencies
         working-directory: tests/ui
         run: npm ci

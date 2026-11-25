@@ -1,7 +1,7 @@
 <?php
 namespace Mailcow\Mailbox;
 
-/** Validate the entire input before invoking the existing, permission-checked mailbox creator. */
+/** Preflight identities and retain value errors per row so valid mailboxes can proceed. */
 final class BatchCreator {
     public static function prepare(array $rows): array {
         if (count($rows) < 1 || count($rows) > 50) throw new \InvalidArgumentException('Create between 1 and 50 mailboxes per batch.');
@@ -15,15 +15,19 @@ final class BatchCreator {
             if (!filter_var($address, FILTER_VALIDATE_EMAIL) || isset($seen[$address])) {
                 throw new \InvalidArgumentException('Invalid or duplicate address on row '.($index + 1).'.');
             }
-            if (strlen($row['name']) > 255 || strlen($row['password']) < 16 || strlen($row['password']) > 256
-                || !isset($row['quota']) || filter_var($row['quota'], FILTER_VALIDATE_INT, ['options' => ['min_range' => 0]]) === false) {
-                throw new \InvalidArgumentException('Check name, quota, and password length on row '.($index + 1).'.');
+            $error = null;
+            if (strlen($row['name']) > 255) $error = 'Display name is too long (maximum 255).';
+            elseif (strlen($row['password']) < 16) $error = 'Password is too short (minimum 16).';
+            elseif (strlen($row['password']) > 256) $error = 'Password is too long (maximum 256).';
+            elseif (!isset($row['quota']) || filter_var($row['quota'], FILTER_VALIDATE_INT, ['options' => ['min_range' => 0]]) === false) {
+                $error = 'Quota must be a whole number of MiB, zero or greater.';
             }
             $seen[$address] = true;
             [$local, $domain] = explode('@', $address, 2);
             $prepared[] = ['local_part' => $local, 'domain' => $domain, 'name' => $row['name'],
-                           'quota' => (int)$row['quota'], 'password' => $row['password'],
+                           'quota' => $error === null ? (int)$row['quota'] : 0, 'password' => $row['password'],
                            'password2' => $row['password'], 'active' => 1, 'authsource' => 'mailcow', 'sogo_access' => 1];
+            if ($error !== null) $prepared[count($prepared) - 1]['validation_error'] = $error;
         }
         return $prepared;
     }

@@ -485,7 +485,7 @@ function mailbox($_action, $_type, $_data = null, $_extra = null) {
               dkim('add', array('key_size' => $_data['key_size'], 'dkim_selector' => $_data['dkim_selector'], 'domains' => $domain));
             }
           }
-          if (!empty($restart_sogo)) {
+          if (!empty($restart_sogo) && getenv('SKIP_SOGO') != "y") {
             $restart_response = json_decode(docker('post', 'sogo-mailcow', 'restart'), true);
             if ($restart_response['type'] == "success") {
               $_SESSION['return'][] = array(

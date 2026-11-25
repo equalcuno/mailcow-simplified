@@ -2,6 +2,19 @@
 require_once $_SERVER['DOCUMENT_ROOT'] . '/inc/prerequisites.inc.php';
 require_once $_SERVER['DOCUMENT_ROOT'] . '/inc/spf.inc.php';
 
+$setup_json = ($_GET['format'] ?? '') === 'json';
+if ($setup_json) {
+  header('Content-Type: application/json');
+  header('Cache-Control: no-store');
+  if (!in_array($_SESSION['mailcow_cc_role'] ?? '', ['admin', 'domainadmin'], true)
+      || !empty($_SESSION['mailcow_cc_api']) || !empty($_SESSION['pending_tfa_setup']) || !empty($_SESSION['pending_pw_update'])) {
+    http_response_code(403); echo json_encode(['message' => 'An administrator session is required.']); exit;
+  }
+  if (!is_string($_GET['domain'] ?? null) || !filter_var($_GET['domain'], FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME)) {
+    http_response_code(422); echo json_encode(['message' => 'Choose a valid domain.']); exit;
+  }
+}
+
 define('state_good', '<i class="bi bi-check-lg text-success"></i>');
 define('state_missing', '<i class="bi bi-x-lg text-danger"></i>');
 define('state_nomatch', "?");
@@ -18,28 +31,58 @@ if (isset($_SESSION['mailcow_cc_role']) && ($_SESSION['mailcow_cc_role'] == "adm
       $alias_domains = array_merge($alias_domains, mailbox('get', 'alias_domains', $domain));
     }
     else {
+      if ($setup_json) { http_response_code(403); echo json_encode(['message' => 'Domain is outside your permissions.']); exit; }
       echo "No such domain in context";
       exit();
     }
   }
 
-  $ch = curl_init('http://ip4.mailcow.email');
-  curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
-  curl_setopt($ch, CURLOPT_VERBOSE, false);
-  curl_setopt($ch, CURLOPT_HEADER, false);
-  curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
-  curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
-  $ip = curl_exec($ch);
-  curl_close($ch);
+  if ($setup_json) {
+    // Authorize before reading a cached result. DNS readiness is shared; permissions are not.
+    $setup_cache_key = 'DOMAIN_SETUP_V1:'.hash('sha256', $_SESSION['mailcow_cc_role'].'|'.$mailcow_hostname.'|'.$domain);
+    try { $cached = json_decode($redis->get($setup_cache_key) ?: '', true); } catch (Throwable $e) { $cached = null; }
+    if (empty($_GET['refresh']) && is_array($cached) && isset($cached['records'])) {
+      $cached['enabled'] = (int)($domain_details['active'] ?? 0) === 1;
+      echo json_encode($cached); exit;
+    }
+    // DNS checks must not hold the PHP session lock while other mailbox requests run.
+    session_write_close();
+    ob_start();
+  }
 
-  $ch = curl_init('http://ip6.mailcow.email');
-  curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V6);
-  curl_setopt($ch, CURLOPT_VERBOSE, false);
-  curl_setopt($ch, CURLOPT_HEADER, false);
-  curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
-  curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
-  $ip6 = curl_exec($ch);
-  curl_close($ch);
+  $public_addresses = null;
+  if ($setup_json) {
+    try { $public_addresses = json_decode($redis->get('DOMAIN_SETUP_PUBLIC_IPS_V1') ?: '', true); } catch (Throwable $e) {}
+  }
+  if (is_array($public_addresses)) {
+    [$ip, $ip6] = $public_addresses;
+  } else {
+    $ch = curl_init('http://ip4.mailcow.email');
+    curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
+    curl_setopt($ch, CURLOPT_VERBOSE, false);
+    curl_setopt($ch, CURLOPT_HEADER, false);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 4);
+    $ip = curl_exec($ch);
+    curl_close($ch);
+
+    $ch = curl_init('http://ip6.mailcow.email');
+    curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V6);
+    curl_setopt($ch, CURLOPT_VERBOSE, false);
+    curl_setopt($ch, CURLOPT_HEADER, false);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 4);
+    $ip6 = curl_exec($ch);
+    curl_close($ch);
+
+    $ip = filter_var(trim((string)$ip), FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) ?: '';
+    $ip6 = filter_var(trim((string)$ip6), FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) ?: '';
+    if ($setup_json && $ip !== '') {
+      try { $redis->setex('DOMAIN_SETUP_PUBLIC_IPS_V1', 60, json_encode([$ip, $ip6])); } catch (Throwable $e) {}
+    }
+  }
 
   $ptr = implode('.', array_reverse(explode('.', $ip))) . '.in-addr.arpa';
   if (!empty($ip6)) {
@@ -75,7 +118,7 @@ if (isset($_SESSION['mailcow_cc_role']) && ($_SESSION['mailcow_cc_role'] == "adm
 
   $records = array();
 
-  if ($_SESSION['mailcow_cc_role'] == "admin") {
+  if ($_SESSION['mailcow_cc_role'] == "admin" || $setup_json) {
     $records[] = array(
       $mailcow_hostname,
       'A',
@@ -98,7 +141,7 @@ if (isset($_SESSION['mailcow_cc_role']) && ($_SESSION['mailcow_cc_role'] == "adm
         $mailcow_hostname
       );
     }
-    $records[] = array(
+    if (!$setup_json) $records[] = array(
       '_25._tcp.' . $autodiscover_config['smtp']['server'],
       'TLSA',
       generate_tlsa_digest($autodiscover_config['smtp']['server'], 25, 1)
@@ -177,8 +220,14 @@ if (isset($_SESSION['mailcow_cc_role']) && ($_SESSION['mailcow_cc_role'] == "adm
     $records[] = array(
       $dkim['dkim_selector'] . '._domainkey.' . $domain,
       'TXT',
-      $dkim['dkim_txt']
+      $setup_json ? 'v=DKIM1; k=rsa; p='.$dkim['pubkey'] : $dkim['dkim_txt']
     );
+  }
+
+  $setup_records = [];
+  if ($setup_json && empty($dkim)) {
+    $setup_records[] = ['name' => $domain, 'type' => 'DKIM', 'expected' => 'Generate a DKIM key in domain settings.',
+                        'current' => [], 'required' => true, 'status' => 'missing'];
   }
 
   if (!in_array($domain, $alias_domains)) {
@@ -308,7 +357,25 @@ if (isset($_SESSION['mailcow_cc_role']) && ($_SESSION['mailcow_cc_role'] == "adm
           unset($current);
         }
         else {
-          $currents = (array)dns_get_record($record[0], $record_types[$record[1]]);
+          $observed = dns_get_record($record[0], $record_types[$record[1]]);
+          $currents = (array)$observed;
+          if ($setup_json) {
+            $is_spf = $record[2] === $spf_link;
+            $is_dmarc = $record[2] === $dmarc_link;
+            $is_dkim = $record[1] === 'TXT' && stripos($record[2], 'v=dkim') === 0;
+            $required = in_array($record[1], ['A', 'AAAA', 'PTR', 'MX'], true) || $is_spf || $is_dmarc || $is_dkim;
+            $kind = $is_spf ? 'spf' : ($is_dmarc ? 'dmarc' : ($is_dkim ? 'dkim' : 'record'));
+            $expected = $is_spf ? 'v=spf1 mx -all' : ($is_dmarc ? 'v=DMARC1; p=none' : strip_tags($record[2]));
+            $authorized = null;
+            if ($is_spf) {
+              $allowed = get_spf_allowed_hosts($domain, true);
+              $authorized = \Mailcow\Ui\DomainSetup::allowsAddress($ip, $allowed) && (empty($ip6) || \Mailcow\Ui\DomainSetup::allowsAddress($ip6, $allowed));
+            }
+            // Unknown public addresses cannot establish readiness.
+            if ($record[1] === 'PTR' && !filter_var($ip, FILTER_VALIDATE_IP) && empty($ip6)) $observed = false;
+            $setup_records[] = \Mailcow\Ui\DomainSetup::record($record[0], $record[1], $expected, $observed, $required, $kind, $authorized);
+            continue;
+          }
           if ($record[0] == $mailcow_hostname && ($record[1] == "A" || $record[1] == "AAAA")) {
             if (!empty((array)dns_get_record($record[0], DNS_CNAME))) {
               $currents[0]['ip'] = state_missing . ' <b>(CNAME)</b>';
@@ -441,6 +508,13 @@ if (isset($_SESSION['mailcow_cc_role']) && ($_SESSION['mailcow_cc_role'] == "adm
       }
 
       unset($record);
+
+  if ($setup_json) {
+    ob_end_clean();
+    $setup = \Mailcow\Ui\DomainSetup::summary($domain, $setup_records, (int)($domain_details['active'] ?? 0) === 1, time());
+    try { $redis->setex($setup_cache_key, 300, json_encode($setup)); } catch (Throwable $e) { /* Readiness remains usable without a cache. */ }
+    echo json_encode($setup); exit;
+  }
 
       // Make a hostname RHS absolute so it is not read relative to $ORIGIN.
       // Already-absolute names, the SRV root target "." and IP addresses are left alone.
